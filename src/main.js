@@ -1,17 +1,18 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { groundGLSL, postFrag } from './groundShader.js';
+import { FEAT, fx, BLOCKED } from './layout.js';
 
 // ---------------------------------------------------------------- 配置
 const SCENES = [
   { name: 'Niigata, Japan', sub: 'Spring · sakura over flooded paddies', lat: 37.915, lon: 139.399,
-    clouds: { count: 4, min: 0.6, max: 0.95 }, cars: [{ x: -132.5, v: -14, color: [0.95, 0.95, 0.93] }] },
+    clouds: { count: 4, min: 0.5, max: 0.75 }, cars: [{ f: 'nRoad', o: -2.5, v: -14, color: [0.95, 0.95, 0.93] }], birds: { n: 7, color: [1, 1, 1] } },
   { name: 'La Pampa, Argentina', sub: 'Spring · open grassland', lat: -36.854, lon: -64.050,
-    clouds: { count: 2, min: 0.8, max: 1.2 }, cars: [{ x: -135, v: -12, color: [0.86, 0.18, 0.15] }] },
+    clouds: { count: 2, min: 0.8, max: 1.1 }, cars: [{ f: 'pRoad', o: 0, v: -12, color: [0.86, 0.18, 0.15] }], birds: { n: 9, color: [0.25, 0.22, 0.2] } },
   { name: 'Serengeti, Tanzania', sub: 'Dry season · long grass', lat: -2.502, lon: 35.041,
-    clouds: { count: 3, min: 1.6, max: 2.3 }, cars: [{ x: -165, v: -8, color: [0.55, 0.6, 0.42] }] },
+    clouds: { count: 3, min: 1.7, max: 2.3 }, cars: [{ f: 'sTrack', o: 0, v: -8, color: [0.55, 0.6, 0.42] }], birds: { n: 10, color: [0.22, 0.2, 0.18] } },
   { name: 'Punjab, India', sub: 'Late winter · mustard in flower', lat: 30.820, lon: 76.192,
-    clouds: { count: 6, min: 0.75, max: 1.1 }, cars: [{ x: -100.5, v: -16, color: [0.85, 0.2, 0.18] }, { x: -95.5, v: 10, color: [0.95, 0.95, 0.92] }] },
+    clouds: { count: 6, min: 0.65, max: 0.95 }, cars: [{ f: 'jRoad', o: -2.5, v: -16, color: [0.85, 0.2, 0.18] }, { f: 'jRoad', o: 2.5, v: 10, color: [0.95, 0.95, 0.92] }], birds: { n: 8, color: [0.95, 0.95, 0.95] } },
 ];
 const ART = { cx: 360, cy: 310, hx: 296, hy: 222 };       // 画面矩形（720 设计单位舞台）
 const RECT = { x: 40, y: 64, w: 640, h: 492 };            // 画布覆盖的设计区域
@@ -55,7 +56,7 @@ const postMat = new THREE.ShaderMaterial({
     tDiffuse: { value: rt.texture }, uRes: { value: new THREE.Vector2(1, 1) },
     uRect: { value: new THREE.Vector4(RECT.x, RECT.y, RECT.w, RECT.h) },
     uArt: { value: new THREE.Vector4(ART.cx, ART.cy, ART.hx, ART.hy) },
-    uTime: { value: 0 }, uReveal: { value: 1 }, uSeed: { value: 3.7 }, uPaint: { value: PAINT },
+    uCam: { value: new THREE.Vector2() }, uTime: { value: 0 }, uReveal: { value: 1 }, uSeed: { value: 3.7 }, uPaint: { value: PAINT },
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
   fragmentShader: postFrag, depthTest: false, depthWrite: false,
@@ -89,31 +90,42 @@ const groundGeo = new THREE.PlaneGeometry(1800, CHUNK).rotateX(-Math.PI / 2);
 
 const lowPoly = (o = {}) => new THREE.MeshLambertMaterial({ flatShading: true, ...o });
 const blobGeo = new THREE.IcosahedronGeometry(1, 1);
-const blobMat = lowPoly({ emissive: 0x000000 });
-const petalGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-const petalMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9 });
+const blobMat = lowPoly();
+const trunkGeo = new THREE.CylinderGeometry(0.55, 0.85, 1, 5).translate(0, 0.5, 0);
+const trunkMat = lowPoly({ color: sc(0.42, 0.30, 0.20) });
+const petalGeo = new THREE.CircleGeometry(0.95, 5).rotateX(-Math.PI / 2);
+const petalMat = new THREE.MeshBasicMaterial();
 const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-const animalGeo = new THREE.BoxGeometry(1, 1, 1);
+
+// 斑马：浅色身体 + 深色横纹（圆柱 UV 的 v 沿身体长度方向）
 const stripeTex = (() => {
-  const c = document.createElement('canvas'); c.width = 4; c.height = 16;
-  const g = c.getContext('2d'); g.fillStyle = '#efebe2'; g.fillRect(0, 0, 4, 16);
-  g.fillStyle = '#26221f'; for (let i = 3; i < 16; i += 4) g.fillRect(0, i, 4, 2); g.fillRect(0, 0, 4, 2);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; return t;
+  const c = document.createElement('canvas'); c.width = 4; c.height = 20;
+  const g = c.getContext('2d'); g.fillStyle = '#f4f2ee'; g.fillRect(0, 0, 4, 20);
+  g.fillStyle = '#4b4a52'; for (const y of [2, 6, 10, 14]) g.fillRect(0, y, 4, 3);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = false;
+  t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; return t;
 })();
-const zebraMat = lowPoly({ map: stripeTex });
+function animalGeo(kind) {
+  const parts = [];
+  const L = kind === 'zebra' ? 8.6 : 7.0, Rr = kind === 'zebra' ? 2.4 : 2.0;
+  const body = new THREE.CylinderGeometry(Rr, Rr, L, 7, 1).rotateX(Math.PI / 2).translate(0, Rr + 0.6, 0.4);
+  parts.push(body.toNonIndexed());
+  const head = new THREE.BoxGeometry(1.9, 1.8, 2.6);
+  // 头部 UV 压到纹理的浅色区域
+  const uv = head.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, 0.5, 0.97);
+  head.translate(0, Rr + 1.0, -L / 2 - 0.6);
+  parts.push(head.toNonIndexed());
+  const g = mergeGeometries(parts); g.computeVertexNormals(); return g;
+}
+const zebraGeo = animalGeo('zebra'), cattleGeo = animalGeo('cattle');
+const zebraMat = lowPoly({ map: stripeTex, emissive: sc(0.12, 0.12, 0.12) });
 const cattleMat = lowPoly();
 const houseMat = lowPoly();
 const roofGeo = new THREE.ConeGeometry(0.75, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0);
-const pondMat = new THREE.MeshLambertMaterial({ color: sc(0.30, 0.62, 0.62) });
-const pondRimMat = new THREE.MeshLambertMaterial({ color: sc(0.86, 0.72, 0.52) });
+const pondMat = new THREE.MeshLambertMaterial({ color: sc(0.32, 0.64, 0.62) });
+const pondRimMat = new THREE.MeshLambertMaterial({ color: sc(0.70, 0.52, 0.34) });
 
 // ---------------------------------------------------------------- 区块
-const BLOCKED = [
-  (x) => Math.abs(x - 80) < 46 || Math.abs(x + 130) < 13 || ((x + 1000) % 100) < 5 || ((x + 1000) % 100) > 96,
-  (x) => Math.abs(x - 90) < 42 || Math.abs(x + 135) < 7,
-  (x) => Math.abs(x + 15) < 44 || Math.abs(x + 165) < 7,
-  (x) => Math.abs(x - 120) < 26 || Math.abs(x + 98) < 11,
-];
 const XR = 560;
 const dummy = new THREE.Object3D();
 
@@ -127,138 +139,224 @@ function pondGeo(R, r, grow) {
   const s = new THREE.Shape(); const a = R() * 6, b = R() * 6;
   for (let i = 0; i <= 48; i++) {
     const t = i / 48 * Math.PI * 2;
-    const rr = r * (1 + 0.22 * Math.sin(3 * t + a) + 0.14 * Math.sin(5 * t + b)) + grow;
+    const rr = r * (1 + 0.24 * Math.sin(3 * t + a) + 0.16 * Math.sin(5 * t + b)) + grow;
     i ? s.lineTo(Math.cos(t) * rr, Math.sin(t) * rr) : s.moveTo(Math.cos(t) * rr, Math.sin(t) * rr);
   }
   return new THREE.ShapeGeometry(s).rotateX(-Math.PI / 2);
 }
 
+// 动物：每只记录 [x, z, 朝向, 目标朝向, 速度, 目标速度, 步伐相位, 计时器, 所属群, 缩放]
+const AF = 10;
+class Herd { constructor(x, z, h) { this.x = x; this.z = z; this.h = h; this.r = 45; } }
+
 class Chunk {
   constructor() {
     this.group = new THREE.Group();
     this.ground = new THREE.Mesh(groundGeo, groundMat); this.ground.receiveShadow = true;
-    this.blobs = makeInst(blobGeo, blobMat, 600);
-    this.petals = makeInst(petalGeo, petalMat, 1500, false);
-    this.cattle = makeInst(boxGeo, cattleMat, 200);
-    this.zebra = makeInst(animalGeo, zebraMat, 420);
+    this.blobs = makeInst(blobGeo, blobMat, 900);
+    this.trunk = makeInst(trunkGeo, trunkMat, 200);
+    this.petals = makeInst(petalGeo, petalMat, 2600, false);
+    this.cattle = makeInst(cattleGeo, cattleMat, 220);
+    this.zebra = makeInst(zebraGeo, zebraMat, 360);
     this.house = makeInst(boxGeo, houseMat, 12);
     this.roof = makeInst(roofGeo, houseMat, 12);
     this.fence = makeInst(boxGeo, houseMat, 60);
     this.ponds = [];
-    this.group.add(this.ground, this.blobs, this.petals, this.cattle, this.zebra, this.house, this.roof, this.fence);
+    this.anim = { cattle: new Float32Array(220 * AF), zebra: new Float32Array(360 * AF) };
+    this.herds = [];
+    this.group.add(this.ground, this.blobs, this.trunk, this.petals, this.cattle, this.zebra, this.house, this.roof, this.fence);
   }
   clearPonds() { for (const p of this.ponds) { this.group.remove(p); p.geometry.dispose(); } this.ponds = []; }
   fill(index, biome, seed) {
-    this.index = index;
+    this.index = index; this.biome = biome;
     const z0 = index * CHUNK, R = rng(index * 9973 + biome * 7919 + seed * 131 + 17);
+    this.R = R;
     this.ground.position.set(0, 0, z0 + CHUNK / 2);
-    this.clearPonds();
+    this.clearPonds(); this.herds = [];
     const blocked = BLOCKED[biome];
-    const free = (pad = 0) => { for (let k = 0; k < 30; k++) { const x = (R() * 2 - 1) * XR; if (!blocked(x - pad) && !blocked(x + pad) && !blocked(x)) return x; } return -400; };
-    const n = { blobs: 0, petals: 0, cattle: 0, zebra: 0, house: 0, roof: 0, fence: 0 };
+    const free = (z, pad = 0, xr = XR) => { for (let k = 0; k < 40; k++) { const x = (R() * 2 - 1) * xr; if (!blocked(x - pad, z) && !blocked(x + pad, z) && !blocked(x, z)) return x; } return -420; };
+    const n = { blobs: 0, trunk: 0, petals: 0, cattle: 0, zebra: 0, house: 0, roof: 0, fence: 0 };
     const put = (mesh, key, x, y, z, sx, sy, sz, color, ry = 0, rnd = false) => {
-      if (n[key] >= mesh.instanceMatrix.count) return;
+      if (n[key] >= mesh.instanceMatrix.count) return -1;
       dummy.position.set(x, y, z);
       if (rnd) dummy.rotation.set(R() * 6, R() * 6, R() * 6); else dummy.rotation.set(0, ry, 0);
       dummy.scale.set(sx, sy, sz); dummy.updateMatrix();
-      mesh.setMatrixAt(n[key], dummy.matrix); mesh.setColorAt(n[key], color); n[key]++;
+      mesh.setMatrixAt(n[key], dummy.matrix); mesh.setColorAt(n[key], color); return n[key]++;
     };
-    const tree = (x, z, r, cols, flat = 1, subs = 3) => {
-      put(this.blobs, 'blobs', x, r * 0.9, z, r, r * flat, r, cols[0], 0, true);
+    // 树：树干 + 若干低多边形球团（flat < 1 时为金合欢式伞状树冠）
+    const tree = (x, z, r, cols, { flat = 0.85, subs = 3, h = 0.9, spread = 0.6 } = {}) => {
+      const cy = r * h;
+      put(this.trunk, 'trunk', x, 0, z, r * 0.16, cy, r * 0.16, trunkMat.color, R() * 6);
+      put(this.blobs, 'blobs', x, cy, z, r, r * flat, r, cols[0], 0, true);
       for (let k = 0; k < subs; k++) {
-        const a = R() * 6.28, d = r * (0.45 + R() * 0.35), rr = r * (0.5 + R() * 0.25);
-        put(this.blobs, 'blobs', x + Math.cos(a) * d, r * 0.9 + (R() - 0.3) * r * 0.4, z + Math.sin(a) * d, rr, rr * flat, rr, cols[1 + (k % (cols.length - 1))], 0, true);
+        const a = R() * 6.28, d = r * (spread * 0.7 + R() * spread * 0.6), rr = r * (0.5 + R() * 0.3);
+        put(this.blobs, 'blobs', x + Math.cos(a) * d, cy + (R() - 0.2) * r * 0.35 * flat, z + Math.sin(a) * d, rr, rr * flat, rr, cols[1 + (k % (cols.length - 1))], 0, true);
       }
+      // 顶部高光团
+      put(this.blobs, 'blobs', x - r * 0.2, cy + r * 0.45 * flat, z - r * 0.2, r * 0.5, r * 0.5 * flat, r * 0.5, cols[cols.length - 1], 0, true);
     };
     const rz = () => z0 + R() * CHUNK;
+    const addAnimal = (kind, x, z, h, herd, scale, color) => {
+      const mesh = this[kind]; const i = put(mesh, kind, x, 0, z, scale, scale, scale, color, h);
+      if (i < 0) return;
+      const a = this.anim[kind], o = i * AF;
+      a[o] = x; a[o + 1] = z; a[o + 2] = h; a[o + 3] = h; a[o + 4] = 0; a[o + 5] = 0;
+      a[o + 6] = R() * 6.28; a[o + 7] = R() * 4; a[o + 8] = herd; a[o + 9] = scale;
+    };
 
     if (biome === 0) {
-      const pinks = [sc(0.97, 0.66, 0.76), sc(0.99, 0.76, 0.84), sc(0.93, 0.58, 0.70), sc(1, 0.82, 0.88)];
-      const nt = 2 + Math.floor(R() * 2.5);
+      const pinks = [sc(0.97, 0.66, 0.76), sc(0.99, 0.76, 0.84), sc(0.93, 0.58, 0.70), sc(1, 0.86, 0.91)];
+      const nt = 3 + Math.floor(R() * 3);
       for (let t = 0; t < nt; t++) {
-        const cx = free(12), cz = rz(); const grove = R() < 0.25 ? 3 + Math.floor(R() * 5) : 1;
+        const cz = rz(), cx = free(cz, 14, 380); const grove = R() < 0.3 ? 3 + Math.floor(R() * 5) : 1;
         for (let g = 0; g < grove; g++) {
-          const x = cx + (g ? gauss(R) * 26 : 0), z = cz + (g ? gauss(R) * 26 : 0);
-          if (blocked(x)) continue;
-          const r = 12 + R() * 4;
-          tree(x, z, r, [pinks[Math.floor(R() * 3)], ...pinks], 0.9, 3);
-          for (let p = 0; p < 45; p++) {
-            const a = R() * 6.28, d = r * 0.6 + Math.pow(R(), 1.4) * 26;
-            const s = 0.6 + R() * 0.7;
-            put(this.petals, 'petals', x + Math.cos(a) * d + 4, 0.25, z + Math.sin(a) * d + 4, s, 1, s, R() < 0.6 ? sc(1, 1, 1) : sc(1, 0.86, 0.9), R() * 3);
+          const x = cx + (g ? gauss(R) * 48 : 0), z = cz + (g ? gauss(R) * 44 : 0);
+          if (blocked(x, z)) continue;
+          const r = 11 + R() * 5;
+          tree(x, z, r, [pinks[Math.floor(R() * 3)], ...pinks], { flat: 0.85, subs: 4, h: 1.0, spread: 0.55 });
+          for (let p = 0; p < 110; p++) {
+            const a = R() * 6.28, d = r * 0.5 + Math.pow(R(), 1.3) * 34;
+            const s = 0.7 + R() * 1.0;
+            put(this.petals, 'petals', x + Math.cos(a) * d + 5, 0.3, z + Math.sin(a) * d * 0.9 + 5, s, 1, s,
+              R() < 0.75 ? sc(1, 1, 1) : sc(1, 0.84, 0.9), R() * 3);
           }
         }
       }
     } else if (biome === 1) {
-      if (R() < 0.8) {
-        let cx = free(30); cx = THREE.MathUtils.clamp(cx * 0.55, -300, 300); if (blocked(cx)) cx = -250; const cz = rz(), nh = 12 + Math.floor(R() * 16), dir = R() * 6;
-        for (let k = 0; k < nh; k++) {
-          const x = cx + gauss(R) * 55, z = cz + gauss(R) * 55; if (blocked(x)) continue;
-          const c = R() < 0.7 ? sc(0.22, 0.15, 0.09) : sc(0.36, 0.24, 0.14);
-          put(this.cattle, 'cattle', x, 0.9, z, 3.0, 2.4, 6.5, c, dir + gauss(R) * 1.2);
-        }
-      }
-      for (let k = 0; k < 2; k++) { const x = free(); if (R() < 0.6) put(this.cattle, 'cattle', x, 0.9, rz(), 3.0, 2.4, 6.5, sc(0.22, 0.15, 0.09), R() * 6); }
-      if (R() < 0.5) { const x = free(8); tree(x, rz(), 7 + R() * 3, [sc(0.20, 0.42, 0.22), sc(0.26, 0.5, 0.25), sc(0.17, 0.36, 0.2)], 0.8, 3); }
-    } else if (biome === 2) {
-      const cl = 3 + Math.floor(R() * 3);
-      for (let c = 0; c < cl; c++) {
-        const cx = free(20), cz = rz(), m = 8 + Math.floor(R() * 20), dir = R() * 6;
+      const nh = R() < 0.85 ? 1 + (R() < 0.3 ? 1 : 0) : 0;
+      for (let hI = 0; hI < nh; hI++) {
+        const cz = rz(); let cx = THREE.MathUtils.clamp(free(cz, 30, 420) * 0.6, -240, 240); if (blocked(cx, cz)) cx = -250;
+        const herd = new Herd(cx, cz, R() * 6.28); this.herds.push(herd);
+        const m = 12 + Math.floor(R() * 16);
         for (let k = 0; k < m; k++) {
-          const x = cx + gauss(R) * 48, z = cz + gauss(R) * 48; if (blocked(x)) continue;
-          const dark = R() < 0.12;
-          put(this.zebra, 'zebra', x, 1.3, z, 4.0, 3.0, 7.4, dark ? sc(0.35, 0.28, 0.22) : sc(1, 1, 1), dir + gauss(R) * 1.4);
+          const x = cx + gauss(R) * 62, z = cz + gauss(R) * 58; if (blocked(x, z)) continue;
+          const c = R() < 0.7 ? sc(0.24, 0.16, 0.10) : R() < 0.5 ? sc(0.40, 0.27, 0.16) : sc(0.86, 0.82, 0.74);
+          addAnimal('cattle', x, z, herd.h + gauss(R) * 1.5, this.herds.length - 1, 0.95 + R() * 0.15, c);
         }
       }
-      for (let k = 0; k < 70; k++) { const x = free(); put(this.zebra, 'zebra', x, 1.3, rz(), 4.0, 3.0, 7.4, sc(1, 1, 1), R() * 6); }
-      if (R() < 0.35) { const x = free(15); tree(x, rz(), 13 + R() * 5, [sc(0.22, 0.48, 0.18), sc(0.30, 0.56, 0.22), sc(0.18, 0.40, 0.16)], 0.75, 4); }
+      for (let k = 0; k < 2; k++) { const z = rz(), x = free(z); if (R() < 0.6) addAnimal('cattle', x, z, R() * 6, -1, 1, sc(0.24, 0.16, 0.1)); }
+      if (R() < 0.5) { const z = rz(), x = free(z, 8); tree(x, z, 7 + R() * 3, [sc(0.20, 0.42, 0.22), sc(0.26, 0.5, 0.25), sc(0.17, 0.36, 0.2), sc(0.34, 0.58, 0.3)]); }
+    } else if (biome === 2) {
+      const cl = 2 + Math.floor(R() * 2);
+      for (let c = 0; c < cl; c++) {
+        const cz = rz(), cx = free(cz, 20, 360); const herd = new Herd(cx, cz, R() * 6.28); herd.r = 75; this.herds.push(herd);
+        const m = 10 + Math.floor(R() * 18);
+        for (let k = 0; k < m; k++) {
+          const x = cx + gauss(R) * 70, z = cz + gauss(R) * 60; if (blocked(x, z)) continue;
+          const wild = R() < 0.1;
+          addAnimal('zebra', x, z, herd.h + gauss(R) * 1.6, this.herds.length - 1, 0.95 + R() * 0.15, wild ? sc(0.42, 0.36, 0.32) : sc(1, 1, 1));
+        }
+      }
+      for (let k = 0; k < 75; k++) { const z = rz(), x = free(z, 0, 400); addAnimal('zebra', x, z, R() * 6.28, -1, 0.95 + R() * 0.15, sc(1, 1, 1)); }
+      if (R() < 0.75) {
+        const z = rz(), x = free(z, 18, 360);
+        tree(x, z, 14 + R() * 5, [sc(0.22, 0.46, 0.17), sc(0.30, 0.55, 0.21), sc(0.17, 0.38, 0.14), sc(0.40, 0.62, 0.26)], { flat: 0.45, subs: 5, h: 1.25, spread: 0.75 });
+      }
       if (R() < 0.3) {
-        const x = free(30), z = rz(), r = 13 + R() * 9; const PR = rng(index * 31 + 5);
-        const rim = new THREE.Mesh(pondGeo(PR, r, 3.5), pondRimMat), w = new THREE.Mesh(pondGeo(rng(index * 31 + 5), r, 0), pondMat);
+        const z = rz(), x = free(z, 30), r = 14 + R() * 9; const seedP = index * 31 + 5;
+        const rim = new THREE.Mesh(pondGeo(rng(seedP), r, 4), pondRimMat), w = new THREE.Mesh(pondGeo(rng(seedP), r, 0), pondMat);
         rim.position.set(x, 0.05, z); w.position.set(x, 0.1, z); rim.receiveShadow = w.receiveShadow = true;
         this.ponds.push(rim, w); this.group.add(rim, w);
       }
     } else {
-      const greens = [sc(0.16, 0.36, 0.22), sc(0.22, 0.45, 0.27), sc(0.13, 0.30, 0.19), sc(0.26, 0.5, 0.3)];
-      if (R() < 0.6) {
-        const cx = free(25), cz = rz(), m = 8 + Math.floor(R() * 12);
-        for (let k = 0; k < m; k++) { const x = cx + gauss(R) * 40, z = cz + gauss(R) * 40; if (blocked(x)) continue; tree(x, z, 8 + R() * 3, [greens[Math.floor(R() * 4)], ...greens], 0.85, 3); }
+      const greens = [sc(0.16, 0.36, 0.22), sc(0.22, 0.45, 0.27), sc(0.13, 0.30, 0.19), sc(0.30, 0.54, 0.32)];
+      if (R() < 0.65) {
+        const cz = rz(), cx = free(cz, 25), m = 12 + Math.floor(R() * 14);
+        for (let k = 0; k < m; k++) {
+          const x = cx + gauss(R) * 45, z = cz + gauss(R) * 45; if (blocked(x, z)) continue;
+          tree(x, z, 8 + R() * 4, [greens[Math.floor(R() * 3)], ...greens], { subs: 3, h: 1.0 });
+        }
       }
       if (R() < 0.5) {
-        const side = R() < 0.75 ? -1 : 1, x = -98 + side * (20 + R() * 22), z = rz();
+        const z = rz(), side = R() < 0.75 ? -1 : 1, x = fx(FEAT.jRoad, z) + side * (20 + R() * 22);
         const roofC = R() < 0.6 ? sc(0.86, 0.2, 0.2) : sc(0.25, 0.42, 0.85);
         put(this.house, 'house', x, 3, z, 8, 6, 9, sc(0.93, 0.88, 0.8));
         put(this.roof, 'roof', x, 6, z, 12, 4, 13, roofC);
         put(this.house, 'house', x + 7, 1.6, z + 2, 3.5, 3.2, 4, roofC);
-        const W = 26, H = 22, fx = x + 2, fz = z + 1, fc = sc(0.72, 0.6, 0.42);
-        put(this.fence, 'fence', fx, 0.7, fz - H / 2, W, 1.2, 0.5, fc); put(this.fence, 'fence', fx, 0.7, fz + H / 2, W, 1.2, 0.5, fc);
-        put(this.fence, 'fence', fx - W / 2, 0.7, fz, 0.5, 1.2, H, fc); put(this.fence, 'fence', fx + W / 2, 0.7, fz, 0.5, 1.2, H, fc);
-        if (R() < 0.6) tree(fx - W / 2 - 6, fz + 4, 5, [greens[1], ...greens], 0.85, 2);
+        const W = 26, H = 22, fxx = x + 2, fz = z + 1, fc = sc(0.72, 0.6, 0.42);
+        put(this.fence, 'fence', fxx, 0.7, fz - H / 2, W, 1.2, 0.5, fc); put(this.fence, 'fence', fxx, 0.7, fz + H / 2, W, 1.2, 0.5, fc);
+        put(this.fence, 'fence', fxx - W / 2, 0.7, fz, 0.5, 1.2, H, fc); put(this.fence, 'fence', fxx + W / 2, 0.7, fz, 0.5, 1.2, H, fc);
+        if (R() < 0.7) tree(fxx - W / 2 - 7, fz + 4, 7, [greens[1], ...greens]);
       }
-      for (let k = 0; k < 8; k++) { const x = free(); put(this.cattle, 'cattle', x, 0.9, rz(), 3.0, 2.4, 5.8, R() < 0.5 ? sc(0.25, 0.2, 0.18) : sc(0.38, 0.27, 0.2), R() * 6); }
+      for (let k = 0; k < 8; k++) { const z = rz(), x = free(z); addAnimal('cattle', x, z, R() * 6, -1, 0.9, R() < 0.5 ? sc(0.25, 0.2, 0.18) : sc(0.38, 0.27, 0.2)); }
     }
     for (const k of Object.keys(n)) {
       const m = this[k]; m.count = n[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
+  }
+  // 动物行为：吃草/慢走交替、转向、松散群聚、避开河流道路、走路时轻微起伏
+  updateAnimals(dt, t) {
+    const blocked = BLOCKED[this.biome];
+    for (const h of this.herds) {
+      h.h += (Math.sin(t * 0.13 + h.x * 0.01) * 0.12) * dt;
+      const nx = h.x - Math.sin(h.h) * 1.1 * dt, nz = h.z - Math.cos(h.h) * 1.1 * dt;
+      if (blocked(nx, nz)) h.h += Math.PI * 0.5 * dt * 4; else { h.x = nx; h.z = nz; }
+    }
+    for (const kind of ['cattle', 'zebra']) {
+      const mesh = this[kind]; const cnt = mesh.count; if (!cnt) continue;
+      const a = this.anim[kind]; const R = Math.random;
+      for (let i = 0; i < cnt; i++) {
+        const o = i * AF;
+        let x = a[o], z = a[o + 1], h = a[o + 2];
+        a[o + 7] -= dt;
+        const herd = a[o + 8] >= 0 ? this.herds[a[o + 8]] : null;
+        if (a[o + 7] <= 0) {
+          const walk = R() < 0.55;
+          a[o + 5] = walk ? 2.2 + R() * 3.2 : 0;
+          a[o + 7] = walk ? 2 + R() * 4 : 1.5 + R() * 3.5;
+          a[o + 3] = (herd ? herd.h : h) + (R() - 0.5) * 2.4;
+          if (herd) {
+            const dx = herd.x - x, dz = herd.z - z, d = Math.hypot(dx, dz);
+            if (d > herd.r) { a[o + 3] = Math.atan2(-dx, -dz); a[o + 5] = 3 + R() * 2; }
+          }
+        }
+        // 转向目标朝向
+        let dh = a[o + 3] - h; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+        h += THREE.MathUtils.clamp(dh, -1.4 * dt, 1.4 * dt);
+        a[o + 4] = damp(a[o + 4], a[o + 5], 3, dt);
+        const sp = a[o + 4];
+        const nx = x - Math.sin(h) * sp * dt, nz = z - Math.cos(h) * sp * dt;
+        if (blocked(nx, nz)) { a[o + 3] = h + Math.PI; a[o + 5] = 1.5; } else { x = nx; z = nz; }
+        a[o + 6] += dt * (sp * 2.2 + 0.6);
+        const ph = a[o + 6], s = a[o + 9];
+        const moving = Math.min(1, sp / 2);
+        a[o] = x; a[o + 1] = z; a[o + 2] = h;
+        dummy.position.set(x, Math.abs(Math.sin(ph)) * 0.45 * moving, z);
+        // 吃草时低头（前倾），走路时左右轻摆
+        dummy.rotation.set((1 - moving) * (0.12 + 0.06 * Math.sin(ph * 0.7)), h + Math.sin(ph) * 0.06 * moving, Math.sin(ph) * 0.05 * moving, 'YXZ');
+        dummy.scale.set(s, s, s); dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
     }
   }
 }
 const chunkPool = [], activeChunks = new Map();
 const world = new THREE.Group(); scene.add(world);
 
-// ---------------------------------------------------------------- 云
+// ---------------------------------------------------------------- 云：中心团 + 4~6 个圆瓣 + 外缘小鼓包，边缘做喷溅式虚化
 function cloudGeo(seed) {
   const R = rng(seed), parts = [];
-  const n = 9 + Math.floor(R() * 6);
+  const add = (r, x, y, z) => { const g = new THREE.IcosahedronGeometry(r, 3); g.translate(x, y, z); parts.push(g); };
+  const C = 16 + R() * 4; add(C, 0, 0, 0);
+  const n = 4 + Math.floor(R() * 3);
   for (let i = 0; i < n; i++) {
-    const a = R() * 6.28, d = Math.pow(R(), 0.6) * 26;
-    const r = 9 + R() * 9 - d * 0.18;
-    const g = new THREE.IcosahedronGeometry(r, 3);
-    g.translate(Math.cos(a) * d * 1.1, (R() - 0.5) * 6 + r * 0.15, Math.sin(a) * d);
-    parts.push(g);
+    const a = (i / n) * Math.PI * 2 + (R() - 0.5) * 0.7, d = C * (0.8 + R() * 0.35), r = C * (0.55 + R() * 0.3);
+    add(r, Math.cos(a) * d, (R() - 0.5) * 4, Math.sin(a) * d);
+    for (let k = 0; k < 2; k++) {
+      const a2 = a + (R() - 0.5) * 1.3, d2 = d + r * 0.55, r2 = r * (0.4 + R() * 0.2);
+      add(r2, Math.cos(a2) * d2, -2, Math.sin(a2) * d2);
+    }
   }
-  const m = mergeGeometries(parts); m.scale(1, 0.7, 1); return m;
+  const m = mergeGeometries(parts); m.scale(1, 0.55, 1); return m;
 }
-const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: sc(0.42, 0.44, 0.48) });
+const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: sc(0.40, 0.42, 0.46) });
+cloudMat.onBeforeCompile = (sh) => {
+  sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+    { float rim = 1. - abs(normal.z);
+      float hn = fract(sin(dot(floor(gl_FragCoord.xy*.7), vec2(12.9898,78.233)))*43758.5453);
+      if (rim > .80 + .2*hn) discard; }`);
+};
 const clouds = [];
 for (let i = 0; i < 9; i++) {
   const c = new THREE.Mesh(cloudGeo(101 + i * 7), cloudMat); c.castShadow = true; c.visible = false;
@@ -271,12 +369,12 @@ function makePlane() {
   const add = (g, x, y, z) => { g.translate(x, y, z); parts.push(g.toNonIndexed()); };
   add(new THREE.BoxGeometry(2.4, 2.2, 13), 0, 0, 0.5);
   add(new THREE.ConeGeometry(1.25, 3.5, 6).rotateX(-Math.PI / 2), 0, 0, -7.7);
-  const wg = new THREE.BoxGeometry(30, 0.5, 3.6); add(wg, 0, 0.2, -0.6);
+  add(new THREE.BoxGeometry(30, 0.5, 3.6), 0, 0.2, -0.6);
   add(new THREE.BoxGeometry(10, 0.4, 2.4), 0, 0.6, 6.4);
   add(new THREE.BoxGeometry(0.4, 3.2, 2.6), 0, 2.0, 6.3);
   const g = mergeGeometries(parts); g.computeVertexNormals();
   const m = new THREE.Mesh(g, lowPoly({ color: 0xffffff, emissive: sc(0.22, 0.22, 0.24) }));
-  m.castShadow = true; m.scale.setScalar(1.0);
+  m.castShadow = true;
   const grp = new THREE.Group(); grp.add(m); return grp;
 }
 const plane = makePlane(); scene.add(plane);
@@ -290,6 +388,15 @@ function makeCar() {
 }
 const cars = [makeCar(), makeCar()]; cars.forEach((c) => { c.visible = false; scene.add(c); });
 
+// ---------------------------------------------------------------- 鸟群：扇动翅膀的 V 形小鸟
+const birdGeo = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, -1.2, -4, 0.0, 0.8, 0, 0, 0.6, 0, 0, -1.2, 0, 0, 0.6, 4, 0.0, 0.8], 3));
+  g.computeVertexNormals(); return g;
+})();
+const birdMat = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, emissive: sc(0.2, 0.2, 0.2) });
+const birds = makeInst(birdGeo, birdMat, 16); scene.add(birds);
+const birdState = [];
 // ---------------------------------------------------------------- 状态
 const state = {
   scene: 0, seed: 1, t: 0, dist: 0, camZ: 0, camX: 0, steer: 0, steerTarget: 0, speed: 1, speedTarget: 1,
@@ -316,8 +423,17 @@ function applyScene(i) {
   cars.forEach((c, k) => {
     const d = cfg.cars[k]; c.visible = !!d; if (!d) return;
     c.userData.body.material.color.copy(sc(...d.color));
-    c.userData.v = d.v; c.position.set(d.x, 0, (R() * 2 - 1) * 140); c.rotation.y = d.v > 0 ? Math.PI : 0;
+    c.userData.v = d.v; c.userData.f = FEAT[d.f]; c.userData.o = d.o;
+    c.position.set(fx(FEAT[d.f], 0) + d.o, 0, (R() * 2 - 1) * 140);
   });
+  // 鸟群
+  birdState.length = 0;
+  birdMat.color.copy(sc(...cfg.birds.color));
+  const bx = (R() * 2 - 1) * 200, bz = -200 - R() * 100, bh = (R() - 0.5) * 1.2;
+  for (let k = 0; k < cfg.birds.n; k++) {
+    birdState.push({ x: bx + gauss(R) * 30, z: bz + gauss(R) * 30, y: 38 + R() * 10, h: bh + (R() - 0.5) * 0.3, ph: R() * 6.28, f: 7 + R() * 3 });
+  }
+  birds.count = birdState.length;
   document.getElementById('loc').textContent = cfg.name;
   document.getElementById('sub').textContent = cfg.sub;
   [...document.querySelectorAll('#dots i')].forEach((d, k) => d.classList.toggle('on', k === i));
@@ -386,7 +502,29 @@ function update(dt) {
     c.position.z += c.userData.v * dt;
     if (c.position.z - state.camZ > 320) c.position.z = state.camZ - 300 - Math.random() * 300;
     if (c.position.z - state.camZ < -700) c.position.z = state.camZ + 300;
+    const z = c.position.z, f = c.userData.f;
+    c.position.x = fx(f, z) + c.userData.o;
+    const slope = (fx(f, z - 1) - fx(f, z + 1)) / 2;
+    c.rotation.y = (c.userData.v > 0 ? Math.PI : 0) + Math.atan(slope) * (c.userData.v > 0 ? -1 : 1);
   });
+  // 动物
+  for (const [, ch] of activeChunks) ch.updateAnimals(dt, t);
+  // 鸟：成群缓慢飞行，扇翅；飞出画面后在前方重新出现
+  let lag = 0;
+  for (const b of birdState) lag = Math.max(lag, b.z - state.camZ);
+  if (birdState.length && lag > 330) {
+    const R = Math.random, bx = state.camX + (R() * 2 - 1) * 220, bz = state.camZ - 330 - R() * 200, bh = (R() - 0.5) * 1.2;
+    for (const b of birdState) { b.x = bx + gauss(R) * 30; b.z = bz + gauss(R) * 30; b.h = bh + (R() - 0.5) * 0.3; }
+  }
+  birdState.forEach((b, i) => {
+    b.h += Math.sin(t * 0.3 + i) * 0.05 * dt;
+    b.x -= Math.sin(b.h) * 16 * dt; b.z -= Math.cos(b.h) * 16 * dt; b.ph += dt * b.f;
+    const flap = Math.sin(b.ph);
+    dummy.position.set(b.x, b.y + flap * 0.4, b.z);
+    dummy.rotation.set(0, b.h, 0); dummy.scale.set(0.35 + 0.65 * Math.abs(flap), 1, 1); dummy.updateMatrix();
+    birds.setMatrixAt(i, dummy.matrix);
+  });
+  birds.instanceMatrix.needsUpdate = true;
 
   // 相机与阴影相机（按纹素对齐防止闪烁）
   camera.position.set(state.camX, 600, state.camZ); camera.lookAt(state.camX, 0, state.camZ);
@@ -396,6 +534,7 @@ function update(dt) {
 
   groundUniforms.uTime.value = t;
   postMat.uniforms.uTime.value = t;
+  postMat.uniforms.uCam.value.set(state.camX, state.camZ);
   postMat.uniforms.uReveal.value = state.phase === "in" ? easeInOut(state.reveal) : state.reveal;
   const ui = document.getElementById('ui'); ui.style.opacity = Math.min(1, state.reveal * 1.4);
 
@@ -455,6 +594,7 @@ applyScene(startScene);
 if (CAPTURE) {
   window.__step = (dt = 1 / 30, n = 1) => { for (let i = 0; i < n; i++) update(dt); render(); return state.camZ; };
   window.__goto = goTo;
+  window.__dbg = () => [...activeChunks.values()].map((c) => [c.index, c.zebra.count, c.cattle.count, c.blobs.count, c.petals.count]);
   window.__scene = (i) => { applyScene(i); state.reveal = 1; state.phase = 'idle'; update(0.001); render(); };
   update(0.001); render(); window.__ready = true;
 } else {

@@ -35,11 +35,21 @@ npm run preview    # 预览构建结果
 - **后期**（一个全屏 pass）：轻度 Kuwahara 油画滤镜 → 纸纹 + 动态胶片颗粒 → 圆角矩形 SDF + 多尺度噪声 + 飞白斑点做出撕纸边缘；
   切场景时同一张遮罩向内侵蚀再晕开。
 - 经纬度：纬度随飞行距离增加（南半球数值随之减小），经度随转向偏移。
+- **会动的动物**（第二版）：牛（La Pampa、Punjab）和斑马（Serengeti）每只都有独立状态——在“低头吃草”和“慢走”之间随机切换，
+  平滑转向，走路时轻微上下起伏、左右摆；成群的动物围绕一个缓慢漂移的“群中心”松散聚集，掉队会走回去，并避开河流和道路。
+  斑马是浅色身体加深色横纹（无 mipmap 的条纹贴图）。天上还有一小群扇翅的鸟。车沿蜿蜒的道路行驶并跟着转向。
+- **更像原作的画风**（第二版）：地面加了方向变化的笔刷纹理；稻田按不规则大块划分、每块 5–8 条、颜色各异、田埂偏柔；
+  道路、河流都按 `src/layout.js` 里的正弦叠加曲线蜿蜒（地面着色器和物体摆放共用同一套曲线）；
+  云是中心团 + 圆瓣 + 小鼓包的“花朵”形，边缘做喷溅虚化；樱花树更大、带树干，花瓣更多更大；金合欢是扁伞状大树冠；
+  撕纸边缘改成干笔飞白式喷点，并锚定在世界坐标上随飞行变化。
 
 ## 截图 / 录屏
 ```bash
 npm run shots   # 无头 Chrome（SwiftShader 软件渲染）截 4 个场景 -> shots/scene1..4.png
 npm run video   # 8 秒 demo -> shots/demo.mp4（需要 ffmpeg）
+# 对照视频：每个场景 15 秒 30fps，左原视频右复刻版
+for i in 1 2 3 4; do PORT=$((4190+i)) node scripts/shoot.mjs frames /tmp/cmpv $i 450 & done; wait
+scripts/compare.sh /path/to/reference_videos /tmp/cmpv   # -> shots/compare_scene1..4.mp4、shots/compare_all.mp4
 ```
 `shots/compare_sceneN.png` 左边是参考视频帧，右边是本实现。截图脚本默认用 `/usr/bin/google-chrome`，可用 `CHROME=...` 覆盖。
 `?capture` 模式下关闭实时循环，由脚本调用 `window.__step(dt, n)` 逐帧推进，保证截图/录屏可复现。
@@ -48,4 +58,6 @@ npm run video   # 8 秒 demo -> shots/demo.mp4（需要 ffmpeg）
 - `index.html`、`src/style.css`：页面与底部 UI
 - `src/main.js`：场景、区块流式加载、物体生成、飞机/云/车、交互、后期
 - `src/groundShader.js`：地面着色器和后期着色器
+- `src/layout.js`：道路/河流蜿蜒曲线（JS 与 GLSL 共用）和“不可站立区域”
+- `scripts/compare.sh`：拼接对照视频
 - `scripts/shoot.mjs`：截图和录屏脚本
