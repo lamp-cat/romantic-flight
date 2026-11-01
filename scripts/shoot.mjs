@@ -38,6 +38,47 @@ try {
     execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.png -c:v libx264 -pix_fmt yuv420p -crf 18 ${out}/demo.mp4`);
     fs.rmSync(fdir, { recursive: true, force: true });
     console.log('video done');
+  } else if (mode === 'demo') {
+    // 动物 + 操控演示：自动驾驶 → 指针接管（左右扫）→ 指针静止 2.5 秒后回到自动驾驶
+    const scene = process.argv[4] || '3', N = 480, fdir = `${out}/demo_frames`;
+    fs.rmSync(fdir, { recursive: true, force: true }); fs.mkdirSync(fdir, { recursive: true });
+    await page.goto(`${url}?capture&scene=${scene}`);
+    await page.waitForFunction(() => window.__ready, null, { timeout: 60000 });
+    await page.evaluate(() => {
+      const c = document.createElement('div'); c.id = 'fakecursor';
+      c.innerHTML = '<svg width="22" height="22" viewBox="0 0 22 22"><path d="M3 2 L3 18 L7.5 13.8 L10.5 20 L13 19 L10.2 12.8 L16 12.6 Z" fill="#222" stroke="#fff" stroke-width="1.4"/></svg>';
+      Object.assign(c.style, { position: 'fixed', left: '0', top: '0', zIndex: 99, pointerEvents: 'none', opacity: 0, transition: 'none' });
+      const t = document.createElement('div'); t.id = 'modetag';
+      Object.assign(t.style, { position: 'fixed', left: '50%', top: '24px', transform: 'translateX(-50%)', zIndex: 99, font: '13px/1 system-ui, sans-serif',
+        color: '#555', background: 'rgba(255,255,255,.85)', padding: '6px 10px', borderRadius: '12px', letterSpacing: '.03em' });
+      document.body.append(c, t);
+    });
+    await page.evaluate(() => window.__step(1 / 30, 30));
+    const ease = (x) => x * x * (3 - 2 * x);
+    const script = (t) => {           // 返回 [指针 ndc 或 null, 光标透明度, 标签]
+      if (t < 4) return [null, 0, 'autopilot · 自动驾驶'];
+      if (t < 6) return [0.15 + 0.55 * ease((t - 4) / 2), Math.min(1, (t - 4) * 3), 'pointer · 跟随指针'];
+      if (t < 7) return [0.7, 1, 'pointer · 跟随指针'];
+      if (t < 9.5) return [0.7 - 1.3 * ease((t - 7) / 2.5), 1, 'pointer · 跟随指针'];
+      if (t < 12) return ['idle', 1, 'pointer idle… · 指针静止'];
+      return [null, Math.max(0, 1 - (t - 12) * 2), 'autopilot · 自动驾驶'];
+    };
+    for (let f = 0; f < N; f++) {
+      const t = f / 30, [x, op, tag] = script(t);
+      await page.evaluate(([x, op, tag]) => {
+        if (typeof x === 'number') { window.__pointer(x); window.__lastX = x; }
+        else if (x === null) window.__pointer(null);
+        const r = document.getElementById('gl').getBoundingClientRect(), cx = window.__lastX ?? 0.15;
+        const el = document.getElementById('fakecursor');
+        el.style.opacity = op; el.style.transform = `translate(${r.left + (cx + 1) / 2 * r.width - 3}px, ${r.top + r.height * 0.62}px)`;
+        document.getElementById('modetag').textContent = tag;
+        window.__step(1 / 30, 1);
+      }, [x, op, tag]);
+      await page.screenshot({ path: `${fdir}/${String(f).padStart(4, '0')}.jpg`, type: 'jpeg', quality: 92 });
+      if (f % 60 === 0) console.log('demo frame', f);
+    }
+    execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.jpg -c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p -movflags +faststart ${out}/demo_animals.mp4`);
+    console.log('demo done');
   } else if (mode === 'frames') {
     // 对照视频用：逐帧 JPEG（30 fps），由 scripts/compare.sh 与原视频拼接
     const scene = process.argv[4] || '1', N = +(process.argv[5] || 450);

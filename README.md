@@ -19,7 +19,11 @@ npm run preview    # 预览构建结果
 ```
 
 ## 操作
-- `←` / `→`：转向（飞机和镜头跟着平移）；鼠标在画面上左右移动也可以转向
+- **指针操控**：鼠标/手指在画面上时，飞机平滑地飞向指针的水平位置（临界阻尼弹簧，位置和速度都连续），机头指向实际航向，
+  倾斜角与转弯角速度成正比并做缓动；飞机偏离中心时镜头会跟着横移（有软边界，不会飞出内容区）
+- **自动驾驶**：指针静止约 2.5 秒或离开画面后，飞机按几组频率互不成比例的正弦 + 一维平滑噪声自由漫游（不重复），
+  两种模式之间用平滑权重混合，没有跳变
+- `←` / `→`：等同于把指针向左/右推
 - `↑` / `↓`：加速 / 减速
 - `1`–`4`、`[` / `]`、底部 ‹ › 和圆点：切换场景
 - 默认每 20 秒自动轮播（水彩晕开式过渡），`空格` 暂停/恢复自动轮播
@@ -47,9 +51,7 @@ npm run preview    # 预览构建结果
 ```bash
 npm run shots   # 无头 Chrome（SwiftShader 软件渲染）截 4 个场景 -> shots/scene1..4.png
 npm run video   # 8 秒 demo -> shots/demo.mp4（需要 ffmpeg）
-# 动物演示：Serengeti 12 秒，30fps 逐帧 JPEG 后用 ffmpeg 合成
-node scripts/shoot.mjs frames /tmp/fr 3 360
-ffmpeg -framerate 30 -i /tmp/fr/frames3/%04d.jpg -c:v libx264 -pix_fmt yuv420p shots/demo_animals.mp4
+npm run demo    # 16 秒 Serengeti 演示（斑马走动 + 自动驾驶 → 指针接管 → 静止后回到自动驾驶）-> shots/demo_animals.mp4
 ```
 `shots/compare_sceneN.png` 左边是参考视频帧，右边是本实现；`shots/motion_*.png` 是跟随地面的连续裁切，可看出动物在动。截图脚本默认用 `/usr/bin/google-chrome`，可用 `CHROME=...` 覆盖。
 `?capture` 模式下关闭实时循环，由脚本调用 `window.__step(dt, n)` 逐帧推进，保证截图/录屏可复现。

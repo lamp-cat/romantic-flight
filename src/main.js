@@ -399,9 +399,9 @@ const birds = makeInst(birdGeo, birdMat, 16); scene.add(birds);
 const birdState = [];
 // ---------------------------------------------------------------- 状态
 const state = {
-  scene: 0, seed: 1, t: 0, dist: 0, camZ: 0, camX: 0, steer: 0, steerTarget: 0, speed: 1, speedTarget: 1,
+  scene: 0, seed: 1, t: 0, dist: 0, camZ: 0, camX: 0, speed: 1, speedTarget: 1,
   reveal: 1, phase: 'idle', pending: -1, autoT: 0, planeX: 0, planeVX: 0,
-  keys: {}, mouse: null,
+  keys: {}, ptr: { x: 0, inside: false, last: -99 }, ctl: 0, off: 0, offV: 0, camVX: 0, yaw: 0, roll: 0, pitch: 0,
 };
 
 function applyScene(i) {
@@ -464,27 +464,43 @@ function update(dt) {
 
   // 操控
   const k = state.keys;
-  if (k.ArrowLeft) state.steerTarget -= 160 * dt;
-  if (k.ArrowRight) state.steerTarget += 160 * dt;
+  const P = state.ptr;
+  if (k.ArrowLeft || k.ArrowRight) { P.x = THREE.MathUtils.clamp(P.x + (k.ArrowRight ? 1.1 : -1.1) * dt, -1, 1); P.inside = true; P.last = state.t; }
   if (k.ArrowUp) state.speedTarget = Math.min(3, state.speedTarget + dt * 1.2);
   if (k.ArrowDown) state.speedTarget = Math.max(0.25, state.speedTarget - dt * 1.2);
-  if (state.mouse !== null) state.steerTarget = state.mouse * 170;
-  state.steerTarget = THREE.MathUtils.clamp(state.steerTarget, -180, 180);
-  state.steer = damp(state.steer, state.steerTarget, 2.0, dt);
-  state.camX = damp(state.camX, state.steer * 0.75, 0.9, dt);
   state.speed = damp(state.speed, state.speedTarget, 2, dt);
 
   const v = BASE_SPEED * state.speed;
   state.camZ -= v * dt; state.dist += v * dt;
   streamChunks();
 
-  // 飞机：轻微左右摇摆 + 倾斜
+  // 飞机操控：指针在画面上时飞向指针的水平位置；指针静止 2.5 秒或离开画面后切换为自动驾驶（不重复的漫游），两者平滑混合
   const t = state.t;
-  const px = state.steer + 34 * Math.sin(t * 0.42) + 9 * Math.sin(t * 1.07 + 1.3);
-  const vx = (px - state.planeX) / Math.max(dt, 1e-4);
-  state.planeVX = damp(state.planeVX, vx, 4, dt); state.planeX = px;
-  plane.position.set(px, 62, state.camZ + 62);
-  plane.rotation.set(0.04 * Math.sin(t * 0.8), -state.planeVX * 0.006, -state.planeVX * 0.028, 'YXZ');
+  const wantPtr = P.inside && t - P.last < IDLE_SECONDS ? 1 : 0;
+  // 进入指针模式快一些，回到自动驾驶慢一些
+  state.ctl = damp(state.ctl, wantPtr, wantPtr ? 2.2 : 0.7, dt);
+  const w = state.ctl * state.ctl * (3 - 2 * state.ctl);
+  const target = THREE.MathUtils.lerp(autopilot(t + state.seed * 37.1), P.x * 250, w);
+  // 临界阻尼弹簧：位置、速度都连续，没有突变
+  const om = 1.6;
+  state.offV += (om * om * (target - state.off) - 2 * om * state.offV) * dt;
+  state.off += state.offV * dt;
+  // 镜头跟随飞机：飞机偏离中心越多，镜头横移越快（同样经过平滑）
+  // 世界内容集中在 x≈0 附近，所以镜头横移有软边界：越靠边，向外的跟随越弱，并有轻微回中力
+  let follow = state.off * 0.16;
+  if (follow * state.camX > 0) follow *= Math.max(0, 1 - (state.camX / CAM_LIMIT) ** 2);
+  state.camVX = damp(state.camVX, follow - state.camX * 0.02, 1.0, dt);
+  state.camX += state.camVX * dt;
+  const px = state.camX + state.off;
+  const latV = state.camVX + state.offV;               // 世界坐标下的横向速度
+  const yaw = THREE.MathUtils.clamp(-Math.atan2(latV, v) * 0.7, -0.7, 0.7);              // 机头指向实际航向（略收敛，避免横着飞）
+  const yawRate = (yaw - state.yaw) / Math.max(dt, 1e-4); state.yaw = yaw;
+  // 倾斜与转弯角速度成正比，并做缓动
+  state.roll = damp(state.roll, THREE.MathUtils.clamp(yawRate * 1.3, -0.6, 0.6), 3.0, dt);
+  state.pitch = damp(state.pitch, 0.04 * Math.sin(t * 0.8) - Math.abs(state.roll) * 0.08, 3, dt);
+  state.planeX = px; state.planeVX = latV;
+  plane.position.set(px, 62 + 1.2 * Math.sin(t * 0.9), state.camZ + 62);
+  plane.rotation.set(state.pitch, yaw, state.roll, 'YXZ');
 
   // 云：随风漂移，离开画面后在前方重生
   const cfg = SCENES[state.scene];
@@ -543,6 +559,14 @@ function update(dt) {
   const lon = cfg.lon + state.camX * DEG_PER_UNIT / Math.cos(cfg.lat * Math.PI / 180) - state.dist * DEG_PER_UNIT * 0.12;
   coordEl.textContent = `${Math.abs(lat).toFixed(3)}° ${lat >= 0 ? 'N' : 'S'}  ${Math.abs(lon).toFixed(3)}° ${lon >= 0 ? 'E' : 'W'}`;
 }
+// 自动驾驶：几组频率互不成比例的正弦 + 一维平滑噪声，永不重复
+const IDLE_SECONDS = 2.5, CAM_LIMIT = 170;
+const h1 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const noise1 = (x) => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return THREE.MathUtils.lerp(h1(i), h1(i + 1), u) * 2 - 1; };
+function autopilot(t) {
+  return 70 * Math.sin(t * 0.173 + 0.4) + 45 * Math.sin(t * 0.2913 + 2.2) + 22 * Math.sin(t * 0.4571 + 4.1)
+    + 60 * noise1(t * 0.09) + 25 * noise1(t * 0.23 + 17.3);
+}
 const easeInOut = (x) => x * x * (3 - 2 * x);
 const coordEl = document.getElementById('coord');
 
@@ -579,13 +603,21 @@ addEventListener('keydown', (e) => {
   else if (e.key === ' ') { autoCycle = !autoCycle; state.autoT = 0; }
   else if (e.key === 'k') postMat.uniforms.uPaint.value = postMat.uniforms.uPaint.value > 0 ? 0 : PAINT;
   state.keys[e.key] = true;
-  if (e.key.startsWith('Arrow')) { state.mouse = null; e.preventDefault(); }
+  if (e.key.startsWith('Arrow')) e.preventDefault();
 });
 addEventListener('keyup', (e) => { state.keys[e.key] = false; });
-canvas.addEventListener('pointermove', (e) => {
-  const r = canvas.getBoundingClientRect(); state.mouse = THREE.MathUtils.clamp(((e.clientX - r.left) / r.width) * 2 - 1, -1, 1);
-});
-canvas.addEventListener('pointerleave', () => { state.mouse = null; state.steerTarget = 0; });
+// 指针（鼠标/触摸）：只用水平位置；记录最后一次移动的时间，用来判断是否闲置
+function setPointer(ndcX) {
+  const P = state.ptr;
+  if (ndcX === null) { P.inside = false; return; }
+  P.x = THREE.MathUtils.clamp(ndcX, -1, 1); P.inside = true; P.last = state.t;
+}
+const ptrNdc = (e) => { const r = canvas.getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * 2 - 1; };
+canvas.style.touchAction = 'none';
+canvas.addEventListener('pointermove', (e) => setPointer(ptrNdc(e)));
+canvas.addEventListener('pointerdown', (e) => setPointer(ptrNdc(e)));
+canvas.addEventListener('pointerleave', () => setPointer(null));
+canvas.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') setPointer(null); });
 
 // ---------------------------------------------------------------- 启动
 layout();
@@ -594,6 +626,9 @@ applyScene(startScene);
 if (CAPTURE) {
   window.__step = (dt = 1 / 30, n = 1) => { for (let i = 0; i < n; i++) update(dt); render(); return state.camZ; };
   window.__goto = goTo;
+  window.__pointer = setPointer;
+  window.__state = () => state;
+  window.__tick = (dt = 1 / 30, n = 1) => { for (let i = 0; i < n; i++) update(dt); };
   window.__dbg = () => [...activeChunks.values()].map((c) => [c.index, c.zebra.count, c.cattle.count, c.blobs.count, c.petals.count]);
   window.__scene = (i) => { applyScene(i); state.reveal = 1; state.phase = 'idle'; update(0.001); render(); };
   update(0.001); render(); window.__ready = true;
