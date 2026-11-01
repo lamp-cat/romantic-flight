@@ -47,11 +47,11 @@ npm run preview    # 预览构建结果
 ```bash
 npm run shots   # 无头 Chrome（SwiftShader 软件渲染）截 4 个场景 -> shots/scene1..4.png
 npm run video   # 8 秒 demo -> shots/demo.mp4（需要 ffmpeg）
-# 对照视频：每个场景 15 秒 30fps，左原视频右复刻版
-for i in 1 2 3 4; do PORT=$((4190+i)) node scripts/shoot.mjs frames /tmp/cmpv $i 450 & done; wait
-scripts/compare.sh /path/to/reference_videos /tmp/cmpv   # -> shots/compare_scene1..4.mp4、shots/compare_all.mp4
+# 动物演示：Serengeti 12 秒，30fps 逐帧 JPEG 后用 ffmpeg 合成
+node scripts/shoot.mjs frames /tmp/fr 3 360
+ffmpeg -framerate 30 -i /tmp/fr/frames3/%04d.jpg -c:v libx264 -pix_fmt yuv420p shots/demo_animals.mp4
 ```
-`shots/compare_sceneN.png` 左边是参考视频帧，右边是本实现。截图脚本默认用 `/usr/bin/google-chrome`，可用 `CHROME=...` 覆盖。
+`shots/compare_sceneN.png` 左边是参考视频帧，右边是本实现；`shots/motion_*.png` 是跟随地面的连续裁切，可看出动物在动。截图脚本默认用 `/usr/bin/google-chrome`，可用 `CHROME=...` 覆盖。
 `?capture` 模式下关闭实时循环，由脚本调用 `window.__step(dt, n)` 逐帧推进，保证截图/录屏可复现。
 
 ## 目录
@@ -59,5 +59,4 @@ scripts/compare.sh /path/to/reference_videos /tmp/cmpv   # -> shots/compare_scen
 - `src/main.js`：场景、区块流式加载、物体生成、飞机/云/车、交互、后期
 - `src/groundShader.js`：地面着色器和后期着色器
 - `src/layout.js`：道路/河流蜿蜒曲线（JS 与 GLSL 共用）和“不可站立区域”
-- `scripts/compare.sh`：拼接对照视频
 - `scripts/shoot.mjs`：截图和录屏脚本
