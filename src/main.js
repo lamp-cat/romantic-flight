@@ -227,27 +227,27 @@ class Chunk {
       for (let hI = 0; hI < nh; hI++) {
         const cz = rz(); let cx = THREE.MathUtils.clamp(free(cz, 30, 420) * 0.6, -240, 240); if (blocked(cx, cz)) cx = -250;
         const herd = new Herd(cx, cz, R() * 6.28); this.herds.push(herd);
-        const m = 12 + Math.floor(R() * 16);
+        const m = 6 + Math.floor(R() * 8);
         for (let k = 0; k < m; k++) {
           const x = cx + gauss(R) * 62, z = cz + gauss(R) * 58; if (blocked(x, z)) continue;
           const c = R() < 0.7 ? sc(0.24, 0.16, 0.10) : R() < 0.5 ? sc(0.40, 0.27, 0.16) : sc(0.86, 0.82, 0.74);
           addAnimal('cattle', x, z, herd.h + gauss(R) * 1.5, this.herds.length - 1, 0.95 + R() * 0.15, c);
         }
       }
-      for (let k = 0; k < 2; k++) { const z = rz(), x = free(z); if (R() < 0.6) addAnimal('cattle', x, z, R() * 6, -1, 1, sc(0.24, 0.16, 0.1)); }
+      for (let k = 0; k < 3; k++) { const z = rz(), x = free(z, 0, 380); if (R() < 0.6) addAnimal('cattle', x, z, R() * 6, -1, 1, sc(0.24, 0.16, 0.1)); }
       if (R() < 0.5) { const z = rz(), x = free(z, 8); tree(x, z, 7 + R() * 3, [sc(0.20, 0.42, 0.22), sc(0.26, 0.5, 0.25), sc(0.17, 0.36, 0.2), sc(0.34, 0.58, 0.3)]); }
     } else if (biome === 2) {
-      const cl = 2 + Math.floor(R() * 2);
+      const cl = 1 + Math.floor(R() * 2);
       for (let c = 0; c < cl; c++) {
         const cz = rz(), cx = free(cz, 20, 360); const herd = new Herd(cx, cz, R() * 6.28); herd.r = 75; this.herds.push(herd);
-        const m = 10 + Math.floor(R() * 18);
+        const m = 6 + Math.floor(R() * 9);
         for (let k = 0; k < m; k++) {
           const x = cx + gauss(R) * 70, z = cz + gauss(R) * 60; if (blocked(x, z)) continue;
           const wild = R() < 0.1;
           addAnimal('zebra', x, z, herd.h + gauss(R) * 1.6, this.herds.length - 1, 0.95 + R() * 0.15, wild ? sc(0.42, 0.36, 0.32) : sc(1, 1, 1));
         }
       }
-      for (let k = 0; k < 75; k++) { const z = rz(), x = free(z, 0, 400); addAnimal('zebra', x, z, R() * 6.28, -1, 0.95 + R() * 0.15, sc(1, 1, 1)); }
+      for (let k = 0; k < 36; k++) { const z = rz(), x = free(z, 0, 400); addAnimal('zebra', x, z, R() * 6.28, -1, 0.95 + R() * 0.15, sc(1, 1, 1)); }
       if (R() < 0.75) {
         const z = rz(), x = free(z, 18, 360);
         tree(x, z, 14 + R() * 5, [sc(0.22, 0.46, 0.17), sc(0.30, 0.55, 0.21), sc(0.17, 0.38, 0.14), sc(0.40, 0.62, 0.26)], { flat: 0.45, subs: 5, h: 1.25, spread: 0.75 });
@@ -278,7 +278,7 @@ class Chunk {
         put(this.fence, 'fence', fxx - W / 2, 0.7, fz, 0.5, 1.2, H, fc); put(this.fence, 'fence', fxx + W / 2, 0.7, fz, 0.5, 1.2, H, fc);
         if (R() < 0.7) tree(fxx - W / 2 - 7, fz + 4, 7, [greens[1], ...greens]);
       }
-      for (let k = 0; k < 8; k++) { const z = rz(), x = free(z); addAnimal('cattle', x, z, R() * 6, -1, 0.9, R() < 0.5 ? sc(0.25, 0.2, 0.18) : sc(0.38, 0.27, 0.2)); }
+      for (let k = 0; k < 3; k++) { const z = rz(), x = free(z); addAnimal('cattle', x, z, R() * 6, -1, 0.9, R() < 0.5 ? sc(0.25, 0.2, 0.18) : sc(0.38, 0.27, 0.2)); }
     }
     for (const k of Object.keys(n)) {
       const m = this[k]; m.count = n[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
@@ -629,6 +629,10 @@ if (CAPTURE) {
   window.__pointer = setPointer;
   window.__state = () => state;
   window.__tick = (dt = 1 / 30, n = 1) => { for (let i = 0; i < n; i++) update(dt); };
+  window.__count = () => { let tot = 0, vis = 0;
+    for (const [, c] of activeChunks) for (const kind of ['cattle', 'zebra']) { const a = c.anim[kind];
+      for (let i = 0; i < c[kind].count; i++) { tot++; if (Math.abs(a[i * AF] - state.camX) < 296 && Math.abs(a[i * AF + 1] - state.camZ) < 222) vis++; } }
+    return { tot, vis }; };
   window.__dbg = () => [...activeChunks.values()].map((c) => [c.index, c.zebra.count, c.cattle.count, c.blobs.count, c.petals.count]);
   window.__scene = (i) => { applyScene(i); state.reveal = 1; state.phase = 'idle'; update(0.001); render(); };
   update(0.001); render(); window.__ready = true;
