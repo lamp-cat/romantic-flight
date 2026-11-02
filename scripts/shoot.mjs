@@ -5,7 +5,8 @@ import fs from 'node:fs';
 
 const PORT = +(process.env.PORT || 4179);
 const url = `http://localhost:${PORT}/`;
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
+const server = spawn('node_modules/.bin/vite', ['preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore', detached: true });
+const stopServer = () => { try { process.kill(-server.pid); } catch { server.kill(); } };
 await new Promise((r) => setTimeout(r, 1500));
 const exe = process.env.CHROME || '/usr/bin/google-chrome';
 const browser = await chromium.launch({ executablePath: exe, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
@@ -139,6 +140,32 @@ try {
       fs.rmSync(fdir, { recursive: true, force: true });
     }
     console.log('me tour done');
+  } else if (mode === 'lm-shots') {
+    // 地标世界四个场景的截图 -> shots/lm_scene1..4.png（SCENES=1,3 只拍部分；STEPS 改变飞行帧数）
+    const list = (process.env.SCENES || '1,2,3,4').split(',').map(Number), steps = +(process.env.STEPS || 120);
+    for (const i of list) {
+      await page.goto(`${url}?capture&world=landmarks&scene=${i}`);
+      await page.waitForFunction(() => window.__ready, null, { timeout: 120000 });
+      await page.evaluate((n) => window.__step(1 / 30, n), steps);
+      await page.screenshot({ path: `${out}/lm_scene${i}${process.env.SUFFIX || ''}.png` });
+      console.log('lm shot', i);
+    }
+  } else if (mode === 'lm-demo') {
+    // 地标巡游（约 30 秒，720x720）：东京塔 → 天安门 → 故宫 → 悉尼歌剧院，每段约 7.5 秒，撕纸转场，全程自动驾驶
+    const N = +(process.env.FRAMES || 900), GO = { 210: 1, 435: 2, 660: 3 };
+    const fdir = `${out}/lm_frames`;
+    fs.rmSync(fdir, { recursive: true, force: true }); fs.mkdirSync(fdir, { recursive: true });
+    await page.goto(`${url}?capture&world=landmarks&scene=1`);
+    await page.waitForFunction(() => window.__ready, null, { timeout: 120000 });
+    await page.evaluate(() => window.__clearSky(9));
+    for (let f = 0; f < N; f++) {
+      await page.evaluate((go) => { if (go !== undefined) window.__goto(go); window.__step(1 / 30, 1); }, GO[f]);
+      await page.screenshot({ path: `${fdir}/${String(f).padStart(4, '0')}.jpg`, type: 'jpeg', quality: 92 });
+      if (f % 60 === 0) console.log('lm frame', f);
+    }
+    execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.jpg -c:v libx264 -crf ${process.env.CRF || 21} -preset slow -pix_fmt yuv420p -movflags +faststart ${out}/demo_landmarks.mp4`);
+    fs.rmSync(fdir, { recursive: true, force: true });
+    console.log('lm demo done');
   } else if (mode === 'frames') {
     // 对照视频用：逐帧 JPEG（30 fps），由 scripts/compare.sh 与原视频拼接
     const scene = process.argv[4] || '1', N = +(process.argv[5] || 450);
@@ -154,5 +181,5 @@ try {
     console.log('frames done', scene);
   }
 } finally {
-  await browser.close(); server.kill();
+  await browser.close(); stopServer();
 }

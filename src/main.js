@@ -4,6 +4,7 @@ import { groundGLSL, postFrag } from './groundShader.js';
 import { FEAT, fx, BLOCKED } from './layout.js';
 import { Traffic, Train } from './traffic.js';
 import * as ME from './middleearth.js';
+import * as LM from './landmarks.js';
 
 // ---------------------------------------------------------------- 配置
 const EARTH_SCENES = [
@@ -25,11 +26,16 @@ const AUTO_SECONDS = 20;
 
 const params = new URLSearchParams(location.search);
 // ?world=middleearth 切换到中土世界的四个场景（默认是地球）
-const IS_ME = ['middleearth', 'me'].includes((params.get('world') || '').toLowerCase().replace(/[^a-z]/g, ''));
-const SCENES = IS_ME ? ME.SCENES : EARTH_SCENES;
-const BLK = IS_ME ? ME.BLOCKED : BLOCKED;
-const groundH = IS_ME ? ME.height : () => 0;
+const WORLD = (params.get('world') || '').toLowerCase().replace(/[^a-z]/g, '');
+const IS_ME = ['middleearth', 'me'].includes(WORLD);
+// ?world=landmarks 切换到地标世界：东京塔、天安门、故宫、悉尼歌剧院
+const IS_LM = ['landmarks', 'landmark', 'lm'].includes(WORLD);
+const W = IS_ME ? ME : IS_LM ? LM : null;       // 非地球世界的模块
+const SCENES = W ? W.SCENES : EARTH_SCENES;
+const BLK = W ? W.BLOCKED : BLOCKED;
+const groundH = W ? W.height : () => 0;
 if (IS_ME) document.title = 'Flyover · Middle-earth · 中土世界航拍';
+if (IS_LM) document.title = 'Flyover · Landmarks · 地标航拍';
 const CAPTURE = params.has('capture');
 let autoCycle = params.get('auto') !== '0' && !CAPTURE;
 const PAINT = params.has('paint') ? parseFloat(params.get('paint')) : 1;
@@ -87,7 +93,7 @@ scene.add(sun, sun.target);
 // ---------------------------------------------------------------- 材质
 const groundUniforms = { uBiome: { value: 0 }, uTime: { value: 0 } };
 const groundMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-if (IS_ME) ME.patchGround(groundMat, groundUniforms);
+if (W) W.patchGround(groundMat, groundUniforms);
 else groundMat.onBeforeCompile = (sh) => {
   Object.assign(sh.uniforms, groundUniforms);
   sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <begin_vertex>',
@@ -95,7 +101,7 @@ else groundMat.onBeforeCompile = (sh) => {
   sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + groundGLSL)
     .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( groundColor(vWPos.xz), opacity );');
 };
-const groundGeo = IS_ME ? ME.groundGeo(1800, CHUNK) : new THREE.PlaneGeometry(1800, CHUNK).rotateX(-Math.PI / 2);
+const groundGeo = W ? W.groundGeo(1800, CHUNK) : new THREE.PlaneGeometry(1800, CHUNK).rotateX(-Math.PI / 2);
 
 const lowPoly = (o = {}) => new THREE.MeshLambertMaterial({ flatShading: true, ...o });
 const blobGeo = new THREE.IcosahedronGeometry(1, 1);
@@ -174,7 +180,7 @@ class Chunk {
     this.anim = { cattle: new Float32Array(220 * AF), zebra: new Float32Array(360 * AF) };
     this.herds = [];
     this.group.add(this.ground, this.blobs, this.trunk, this.petals, this.cattle, this.zebra, this.house, this.roof, this.fence);
-    if (IS_ME) this.me = new ME.Deco(this.group);
+    if (W) this.me = new W.Deco(this.group);
   }
   clearPonds() { for (const p of this.ponds) { this.group.remove(p); p.geometry.dispose(); } this.ponds = []; }
   fill(index, biome, seed) {
@@ -196,7 +202,7 @@ class Chunk {
     };
     // 树：树干 + 若干低多边形球团（flat < 1 时为金合欢式伞状树冠）
     const tree = (x, z, r, cols, { flat = 0.85, subs = 3, h = 0.9, spread = 0.6 } = {}) => {
-      const cy = r * h, y0 = IS_ME ? H(x, z) - 0.5 : 0;
+      const cy = r * h, y0 = W ? H(x, z) - 0.5 : 0;
       put(this.trunk, 'trunk', x, y0, z, r * 0.16, cy, r * 0.16, trunkMat.color, R() * 6);
       put(this.blobs, 'blobs', x, y0 + cy, z, r, r * flat, r, cols[0], 0, true);
       for (let k = 0; k < subs; k++) {
@@ -215,7 +221,7 @@ class Chunk {
       a[o + 6] = R() * 6.28; a[o + 7] = R() * 4; a[o + 8] = herd; a[o + 9] = scale;
     };
 
-    if (IS_ME) {
+    if (W) {
       const pond = (x, z, r) => { const seedP = index * 31 + 5, y = H(x, z) + 0.6;
         const rim = new THREE.Mesh(pondGeo(rng(seedP), r, 4), pondRimMat), w = new THREE.Mesh(pondGeo(rng(seedP), r, 0), pondMat);
         rim.position.set(x, y - 0.1, z); w.position.set(x, y, z); rim.receiveShadow = w.receiveShadow = true;
@@ -398,10 +404,12 @@ const plane = makePlane(); scene.add(plane);
 
 // ---------------------------------------------------------------- 车辆
 // 车流与列车见 src/traffic.js
-const traffic = IS_ME ? null : new Traffic(scene);
-const train = IS_ME ? null : new Train(scene);
+const traffic = W ? null : new Traffic(scene);
+const train = W ? null : new Train(scene);
 // 中土世界：马车、骑兵、旅人、行军纵队（见 src/middleearth.js）
-const life = IS_ME ? new ME.Life(scene) : null;
+const life = W ? new W.Life(scene) : null;
+// 地标世界：每个场景一套地标模型
+const monuments = IS_LM ? new LM.Monuments(scene) : null;
 const LOOK_BASE = { hemi: hemi.intensity, sun: sun.intensity };
 
 // ---------------------------------------------------------------- 鸟群：扇动翅膀的 V 形小鸟
@@ -424,7 +432,8 @@ function applyScene(i) {
   state.scene = i; state.seed = (state.seed * 7 + 3) % 1000;
   state.dist = 0; state.camZ = 0;
   // 中土：转场被纸面完全遮住时镜头回到中线，保证每段都能看到该场景的地标
-  if (IS_ME) { state.camX = 0; state.camVX = 0; }
+  if (W) { state.camX = 0; state.camVX = 0; }
+  if (IS_LM) { state.off = 0; state.offV = 0; }
   groundUniforms.uBiome.value = i;
   postMat.uniforms.uSeed.value = 1 + i * 13.7 + state.seed * 0.1;
   for (const [, c] of activeChunks) { world.remove(c.group); chunkPool.push(c); }
@@ -435,13 +444,16 @@ function applyScene(i) {
     c.visible = k < cfg.clouds.count;
     const s = cfg.clouds.min + R() * (cfg.clouds.max - cfg.clouds.min);
     c.scale.set(s, s, s);
-    c.position.set((R() * 2 - 1) * 330, 110 + R() * 50, (R() * 2 - 1) * 330);
+    c.position.set((R() * 2 - 1) * 330, (cfg.clouds.y || 110) + R() * 50, (R() * 2 - 1) * 330);
     c.rotation.y = R() * 6;
   });
+  // 地标世界：每个场景可设镜头缩放（飞机按反比缩放，保持屏幕上大小不变）
+  camera.zoom = cfg.zoom || 1; camera.updateProjectionMatrix(); plane.scale.setScalar(1 / camera.zoom);
   traffic?.reset(i, state.camZ, rng(i * 991 + state.seed * 7 + 5));
   train?.reset(i, state.camZ, rng(i * 313 + state.seed * 3 + 1), 1.0);
   life?.reset(i, state.camZ, rng(i * 577 + state.seed * 5 + 3), groundH);
-  if (IS_ME) ME.applyLook(cfg, { hemi, sun, cloudMat, base: LOOK_BASE });
+  if (W) W.applyLook(cfg, { hemi, sun, cloudMat, base: LOOK_BASE });
+  monuments?.set(i);
   // 鸟群
   birdState.length = 0;
   birdMat.color.copy(sc(...cfg.birds.color));
@@ -486,7 +498,7 @@ function update(dt) {
   if (k.ArrowDown) state.speedTarget = Math.max(0.25, state.speedTarget - dt * 1.2);
   state.speed = damp(state.speed, state.speedTarget, 2, dt);
 
-  const v = BASE_SPEED * state.speed;
+  const v = BASE_SPEED * state.speed * (SCENES[state.scene].speed || 1);
   state.camZ -= v * dt; state.dist += v * dt;
   streamChunks();
 
@@ -496,7 +508,7 @@ function update(dt) {
   // 进入指针模式快一些，回到自动驾驶慢一些
   state.ctl = damp(state.ctl, wantPtr, wantPtr ? 2.2 : 0.7, dt);
   const w = state.ctl * state.ctl * (3 - 2 * state.ctl);
-  const target = THREE.MathUtils.lerp(autopilot(t + state.seed * 37.1), P.x * 250, w);
+  const target = THREE.MathUtils.lerp(autopilot(t + state.seed * 37.1), P.x * 250, w) / (SCENES[state.scene].zoom || 1);
   // 临界阻尼弹簧：位置、速度都连续，没有突变
   const om = 1.6;
   state.offV += (om * om * (target - state.off) - 2 * om * state.offV) * dt;
@@ -515,30 +527,34 @@ function update(dt) {
   state.roll = damp(state.roll, THREE.MathUtils.clamp(yawRate * 1.3, -0.6, 0.6), 3.0, dt);
   state.pitch = damp(state.pitch, 0.04 * Math.sin(t * 0.8) - Math.abs(state.roll) * 0.08, 3, dt);
   state.planeX = px; state.planeVX = latV;
-  plane.position.set(px, 62 + 1.2 * Math.sin(t * 0.9), state.camZ + 62);
+  const cfg = SCENES[state.scene];
+  const tilt = cfg.tilt || 0, pY = cfg.planeY || 62;
+  // 镜头倾斜时，让飞机仍停在画面中心下方 62 单位处
+  const zoom = cfg.zoom || 1;
+  plane.position.set(px, pY + 1.2 * Math.sin(t * 0.9), state.camZ + (62 / zoom + pY * Math.sin(tilt)) / Math.cos(tilt));
   plane.rotation.set(state.pitch, yaw, state.roll, 'YXZ');
 
   // 云：随风漂移，离开画面后在前方重生
-  const cfg = SCENES[state.scene];
   clouds.forEach((c, i) => {
     if (!c.visible) return;
     c.position.x += 2.5 * dt; c.position.z -= (3 + i % 3) * dt;
-    if (c.position.z - state.camZ > 380) {
+    if ((c.position.z - state.camZ) * Math.cos(tilt) - c.position.y * Math.sin(tilt) > 380 * Math.cos(tilt) - (tilt ? 140 : 0)) {
       const R = Math.random;
-      c.position.set(state.camX + (R() * 2 - 1) * 330, 110 + R() * 50, state.camZ - 380 - R() * 120);
+      c.position.set(state.camX + (R() * 2 - 1) * 330, (cfg.clouds.y || 110) + R() * 50, state.camZ - 380 - R() * 120);
       const s = cfg.clouds.min + R() * (cfg.clouds.max - cfg.clouds.min); c.scale.set(s, s, s);
     }
   });
   // 录像用（仅 ?capture 钩子开启）：云在飞机前方的航线上时，被“风”缓缓推向一侧，避免结尾云层盖住飞机
   if (state.clearSky) clouds.forEach((c) => {
     if (!c.visible) return;
-    const dx = c.position.x - state.planeX, dz = c.position.z - (state.camZ + 62);
+    const dx = c.position.x - state.planeX, dz = c.position.z - plane.position.z;
     const r = 70 * c.scale.x + 40;
     if (Math.abs(dx) < r && dz < r && dz > -520) c.position.x += Math.sign(dx || 1) * state.clearSky * dt;
   });
   traffic?.update(dt, state.camZ, state.camX);
   train?.update(dt, state.camZ);
-  life?.update(dt, state.camZ);
+  life?.update(dt, state.camZ, state.camX);
+  monuments?.update(state.camZ);
   // 动物
   for (const [, ch] of activeChunks) { ch.updateAnimals(dt, t); ch.me?.update(t); }
   // 鸟：成群缓慢飞行，扇翅；飞出画面后在前方重新出现
@@ -561,7 +577,7 @@ function update(dt) {
   birds.instanceMatrix.needsUpdate = true;
 
   // 相机与阴影相机（按纹素对齐防止闪烁）
-  camera.position.set(state.camX, 600, state.camZ); camera.lookAt(state.camX, 0, state.camZ);
+  camera.position.set(state.camX, 600 * Math.cos(tilt), state.camZ + 600 * Math.sin(tilt)); camera.lookAt(state.camX, 0, state.camZ);
   const texel = 940 / 2048;
   const tx = Math.round(state.camX / texel) * texel, tz = Math.round(state.camZ / texel) * texel;
   sun.target.position.set(tx, 0, tz); sun.position.set(tx, 0, tz).addScaledVector(SUN_DIR, 600);
@@ -573,7 +589,7 @@ function update(dt) {
   const ui = document.getElementById('ui'); ui.style.opacity = Math.min(1, state.reveal * 1.4);
 
   // 经纬度
-  if (IS_ME) { coordEl.textContent = ME.coords(cfg, state); return; }
+  if (W) { coordEl.textContent = W.coords(cfg, state); return; }
   const lat = cfg.lat + state.dist * DEG_PER_UNIT;
   const lon = cfg.lon + state.camX * DEG_PER_UNIT / Math.cos(cfg.lat * Math.PI / 180) - state.dist * DEG_PER_UNIT * 0.12;
   coordEl.textContent = `${Math.abs(lat).toFixed(3)}° ${lat >= 0 ? 'N' : 'S'}  ${Math.abs(lon).toFixed(3)}° ${lon >= 0 ? 'E' : 'W'}`;

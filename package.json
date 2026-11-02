@@ -13,7 +13,10 @@
     "middleearth": "vite --open '/?world=middleearth'",
     "shots:me": "vite build && node scripts/shoot.mjs me-shots shots",
     "demo:me": "vite build && node scripts/shoot.mjs me-demo shots",
-    "tour:me": "vite build && node scripts/shoot.mjs me-tour shots"
+    "tour:me": "vite build && node scripts/shoot.mjs me-tour shots",
+    "landmarks": "vite --open '/?world=landmarks'",
+    "shots:lm": "vite build && node scripts/shoot.mjs lm-shots shots",
+    "demo:lm": "vite build && node scripts/shoot.mjs lm-demo shots"
   },
   "keywords": [],
   "author": "",
