@@ -12,7 +12,8 @@
     "traffic": "vite build && node scripts/shoot.mjs traffic shots",
     "middleearth": "vite --open '/?world=middleearth'",
     "shots:me": "vite build && node scripts/shoot.mjs me-shots shots",
-    "demo:me": "vite build && node scripts/shoot.mjs me-demo shots"
+    "demo:me": "vite build && node scripts/shoot.mjs me-demo shots",
+    "tour:me": "vite build && node scripts/shoot.mjs me-tour shots"
   },
   "keywords": [],
   "author": "",

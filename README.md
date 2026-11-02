@@ -82,6 +82,7 @@ HUD 显示地区名、中土历法/季节文字（如 "Halimath · harvest-tide,
 ```bash
 npm run shots:me   # -> shots/me_scene1..4.png
 npm run demo:me    # 16 秒：洛汗（骑兵、王城）→ 魔多（熔岩、火山、黑塔、兽人纵队）-> shots/demo_middleearth.mp4
+npm run tour:me    # 60 秒巡游：夏尔 → 洛汗 → 迷雾山脉/瑞文戴尔 → 魔多，每段约 15 秒，撕纸转场 -> shots/me_tour_60s.mp4
 ```
 
 ## 截图 / 录屏

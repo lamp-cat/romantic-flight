@@ -423,6 +423,8 @@ const state = {
 function applyScene(i) {
   state.scene = i; state.seed = (state.seed * 7 + 3) % 1000;
   state.dist = 0; state.camZ = 0;
+  // 中土：转场被纸面完全遮住时镜头回到中线，保证每段都能看到该场景的地标
+  if (IS_ME) { state.camX = 0; state.camVX = 0; }
   groundUniforms.uBiome.value = i;
   postMat.uniforms.uSeed.value = 1 + i * 13.7 + state.seed * 0.1;
   for (const [, c] of activeChunks) { world.remove(c.group); chunkPool.push(c); }
@@ -526,6 +528,13 @@ function update(dt) {
       c.position.set(state.camX + (R() * 2 - 1) * 330, 110 + R() * 50, state.camZ - 380 - R() * 120);
       const s = cfg.clouds.min + R() * (cfg.clouds.max - cfg.clouds.min); c.scale.set(s, s, s);
     }
+  });
+  // 录像用（仅 ?capture 钩子开启）：云在飞机前方的航线上时，被“风”缓缓推向一侧，避免结尾云层盖住飞机
+  if (state.clearSky) clouds.forEach((c) => {
+    if (!c.visible) return;
+    const dx = c.position.x - state.planeX, dz = c.position.z - (state.camZ + 62);
+    const r = 70 * c.scale.x + 40;
+    if (Math.abs(dx) < r && dz < r && dz > -520) c.position.x += Math.sign(dx || 1) * state.clearSky * dt;
   });
   traffic?.update(dt, state.camZ, state.camX);
   train?.update(dt, state.camZ);
@@ -636,6 +645,7 @@ applyScene(startScene);
 if (CAPTURE) {
   window.__step = (dt = 1 / 30, n = 1) => { for (let i = 0; i < n; i++) update(dt); render(); return state.camZ; };
   window.__goto = goTo;
+  window.__clearSky = (v = 8) => { state.clearSky = v; };
   window.__pointer = setPointer;
   window.__state = () => state;
   window.__tick = (dt = 1 / 30, n = 1) => { for (let i = 0; i < n; i++) update(dt); };

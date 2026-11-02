@@ -116,6 +116,29 @@ try {
     execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.jpg -c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p -movflags +faststart ${out}/demo_middleearth.mp4`);
     fs.rmSync(fdir, { recursive: true, force: true });
     console.log('me demo done');
+  } else if (mode === 'me-tour') {
+    // 中土世界 60 秒巡游：夏尔 → 洛汗 → 迷雾山脉/瑞文戴尔 → 魔多，每段约 15 秒，撕纸转场，全程自动驾驶
+    // 每个场景应用时镜头回到 z=0，地标都放在 z≈-10…-190，所以每段 15 秒内都会从画面中经过
+    const N = 1800, GO = { 435: 1, 885: 2, 1335: 3 }, dry = process.env.DRY === '1';
+    const fdir = `${out}/tour_frames`;
+    if (!dry) { fs.rmSync(fdir, { recursive: true, force: true }); fs.mkdirSync(fdir, { recursive: true }); }
+    await page.goto(`${url}?capture&world=middleearth&scene=1`);
+    await page.waitForFunction(() => window.__ready, null, { timeout: 90000 });
+    for (let f = 0; f < N; f++) {
+      const st = await page.evaluate(([go, dry]) => {
+        if (go !== undefined) window.__goto(go);
+        if (go === 3) window.__clearSky(9);   // 最后一段：别让云在结尾盖住飞机
+        if (dry) window.__tick(1 / 30, 1); else window.__step(1 / 30, 1);
+        const s = window.__state(); return { scene: s.scene, camX: s.camX, camZ: s.camZ, px: s.planeX };
+      }, [GO[f], dry]);
+      if (!dry) await page.screenshot({ path: `${fdir}/${String(f).padStart(4, '0')}.jpg`, type: 'jpeg', quality: 90 });
+      if (f % 30 === 0) console.log('tour', (f / 30).toFixed(0) + 's', JSON.stringify(st));
+    }
+    if (!dry) {
+      execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.jpg -c:v libx264 -crf ${process.env.CRF || 23} -preset slow -pix_fmt yuv420p -movflags +faststart ${out}/me_tour_60s.mp4`);
+      fs.rmSync(fdir, { recursive: true, force: true });
+    }
+    console.log('me tour done');
   } else if (mode === 'frames') {
     // 对照视频用：逐帧 JPEG（30 fps），由 scripts/compare.sh 与原视频拼接
     const scene = process.argv[4] || '1', N = +(process.argv[5] || 450);
