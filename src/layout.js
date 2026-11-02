@@ -13,8 +13,9 @@ export const FEAT = {
 };
 export const fx = (f, z) => f.x + f.a[0] * Math.sin(z * f.a[1] + f.a[2]) + f.b[0] * Math.sin(z * f.b[1] + f.b[2]);
 const n = (v) => Number(v).toFixed(5);
-export const featGLSL = Object.entries(FEAT).map(([k, f]) =>
+export const featToGLSL = (feat) => Object.entries(feat).map(([k, f]) =>
   `float ${k}(float z){ return ${n(f.x)} + ${n(f.a[0])}*sin(z*${n(f.a[1])}+${n(f.a[2])}) + ${n(f.b[0])}*sin(z*${n(f.b[1])}+${n(f.b[2])}); }`).join('\n');
+export const featGLSL = featToGLSL(FEAT);
 
 // 各生物群系中不能放物体的区域（河流、道路）
 export const BLOCKED = [

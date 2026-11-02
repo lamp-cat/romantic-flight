@@ -55,6 +55,35 @@ npm run preview    # 预览构建结果
   旁遮普跑红色机车 + 蓝色客车；每节车厢的前后转向架分别取轨道上的点，所以整列车沿弯道铰接弯曲。
   列车上下行交替、间隔几秒周期性出现，都投下阴影。
 
+## 中土世界版（魔戒风格，`?world=middleearth`）
+
+同一套画面与操作（油画滤镜、撕纸边、小白飞机、指针转向 + 不重复的自动驾驶、实时 HUD），换成四个中土地区。
+全部为原创程序化低多边形美术，不使用任何电影素材或标志。
+
+```bash
+npm run middleearth   # 开发模式并直接打开 http://localhost:5173/?world=middleearth
+```
+
+也可以在任意地址后加 `?world=middleearth`（或 `?world=me`），例如 `http://localhost:5173/?world=middleearth&scene=4`
+直接进入魔多；`npm run preview` 后同样加该参数。不带参数时仍是原来的地球四个场景。
+
+1. **夏尔（The Shire）**：起伏的丘陵、篱笆围出的田块（牧场、麦田、花草地、翻耕地），带圆门的霍比特洞屋，
+   蜿蜒小路上的小马车和步行的霍比特人，派对树与彩色帐篷长桌，小河边的磨坊与水塘，零星的羊和小马。
+2. **洛汗（Rohan）**：随风起伏的金色草原，成群行进的骑兵（白色头马、绿色旗帜），
+   山丘上带金顶大厅和木栅栏的王城（Edoras 风格），道路、溪流和野马群。
+3. **瑞文戴尔 · 迷雾山脉**：块面感的雪峰、松林、峡谷中的大河与跌水、两侧支流瀑布，
+   谷底草地上的白色精灵建筑和金色秋树，小径上的远征队和一位白衣骑手，偶尔有巨鹰盘旋。
+4. **魔多（Gorgoroth 高原）**：灰黑火山灰平原和发光裂缝，两条流动的熔岩河，
+   带放射状熔岩沟的火山口和烟柱，黑塔剪影（顶部有一点橙光），道路上行进的兽人纵队（红色旗帜、长矛）。
+
+HUD 显示地区名、中土历法/季节文字（如 "Halimath · harvest-tide, Shire Reckoning 1418"）
+和虚构的地图坐标（`lg E · lg N`，随飞行实时变化）。
+
+```bash
+npm run shots:me   # -> shots/me_scene1..4.png
+npm run demo:me    # 16 秒：洛汗（骑兵、王城）→ 魔多（熔岩、火山、黑塔、兽人纵队）-> shots/demo_middleearth.mp4
+```
+
 ## 截图 / 录屏
 ```bash
 npm run shots   # 无头 Chrome（SwiftShader 软件渲染）截 4 个场景 -> shots/scene1..4.png
@@ -70,5 +99,6 @@ npm run demo    # 16 秒 Serengeti 演示（斑马走动 + 自动驾驶 → 指�
 - `src/main.js`：场景、区块流式加载、物体生成、飞机/云/车、交互、后期
 - `src/groundShader.js`：地面着色器和后期着色器
 - `src/traffic.js`：车流与列车
+- `src/middleearth.js`：中土世界版——四个场景配置、地形高度（GLSL 写一份，JS 自动转译）、地面着色、建筑/树木、移动的队伍
 - `src/layout.js`：道路/河流/铁路蜿蜒曲线（JS 与 GLSL 共用）和“不可站立区域”
 - `scripts/shoot.mjs`：截图和录屏脚本

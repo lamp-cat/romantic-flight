@@ -1,11 +1,14 @@
 import { featGLSL } from './layout.js';
 // 程序化地面着色：根据世界坐标 (x, z) 计算每个生物群系的颜色。
-export const groundGLSL = /* glsl */ `
+// 各世界共用的着色器头部（uniform、varying、道路/河流曲线函数）
+export const groundHeader = (feat) => `
 uniform float uBiome;
 uniform float uTime;
 varying vec3 vWPos;
-${featGLSL}
-
+${feat}
+`;
+// 共用工具：噪声、笔触、河流、铁路、分割、Voronoi
+export const groundCommonGLSL = /* glsl */ `
 float h12(vec2 p){ vec3 p3=fract(vec3(p.xyx)*.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
 vec2 h22(vec2 p){ vec3 p3=fract(vec3(p.xyx)*vec3(.1031,.1030,.0973)); p3+=dot(p3,p3.yzx+33.33); return fract((p3.xx+p3.yz)*p3.zy); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.-2.*f);
@@ -68,6 +71,22 @@ vec3 part(float x, float W, float J, float seed){
   return vec3(i, i*W + (h12(vec2(i,seed))-.5)*J, (i+1.)*W + (h12(vec2(i+1.,seed))-.5)*J);
 }
 
+vec3 vor(vec2 x){
+  vec2 n = floor(x), f = fract(x), mg, mr; float md = 8.;
+  for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){
+    vec2 g = vec2(float(i),float(j)); vec2 o = .15 + .7*h22(n+g); vec2 r = g + o - f; float d = dot(r,r);
+    if(d<md){ md=d; mr=r; mg=g; }
+  }
+  md = 8.;
+  for(int j=-2;j<=2;j++) for(int i=-2;i<=2;i++){
+    vec2 g = mg + vec2(float(i),float(j)); vec2 o = .15 + .7*h22(n+g); vec2 r = g + o - f;
+    if(dot(mr-r,mr-r)>1e-5){ float e = dot(.5*(mr+r), normalize(r-mr)); float k=.09; float h = clamp(.5+.5*(e-md)/k, 0., 1.); md = mix(e, md, h) - k*h*(1.-h); }
+  }
+  return vec3(md, h12(n+mg), h12(n+mg+3.3));
+}
+
+`;
+export const groundGLSL = groundHeader(featGLSL) + groundCommonGLSL + /* glsl */ `
 vec3 niigata(vec2 p){
   vec3 bx = part(p.x, 100., 40., 1.), bz = part(p.y, 74., 22., 2.);
   vec2 bi = vec2(bx.x, bz.x);
@@ -159,20 +178,6 @@ vec3 serengeti(vec2 p){
   col = mix(col, s2l(vec3(.72,.36,.20)), band(abs(rx)-2.6, .8, .35));
   col = river(p, sRiver(p.y), 23., s2l(vec3(.22,.48,.48)), s2l(vec3(.34,.62,.58)), s2l(vec3(.94,.92,.80)), s2l(vec3(.60,.62,.32)), col, 4.);
   return col;
-}
-
-vec3 vor(vec2 x){
-  vec2 n = floor(x), f = fract(x), mg, mr; float md = 8.;
-  for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){
-    vec2 g = vec2(float(i),float(j)); vec2 o = .15 + .7*h22(n+g); vec2 r = g + o - f; float d = dot(r,r);
-    if(d<md){ md=d; mr=r; mg=g; }
-  }
-  md = 8.;
-  for(int j=-2;j<=2;j++) for(int i=-2;i<=2;i++){
-    vec2 g = mg + vec2(float(i),float(j)); vec2 o = .15 + .7*h22(n+g); vec2 r = g + o - f;
-    if(dot(mr-r,mr-r)>1e-5){ float e = dot(.5*(mr+r), normalize(r-mr)); float k=.09; float h = clamp(.5+.5*(e-md)/k, 0., 1.); md = mix(e, md, h) - k*h*(1.-h); }
-  }
-  return vec3(md, h12(n+mg), h12(n+mg+3.3));
 }
 
 vec3 punjab(vec2 p){

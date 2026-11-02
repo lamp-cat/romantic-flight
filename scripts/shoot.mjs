@@ -93,6 +93,29 @@ try {
     execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.jpg -c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p -movflags +faststart ${out}/demo_traffic.mp4`);
     fs.rmSync(fdir, { recursive: true, force: true });
     console.log('traffic done');
+  } else if (mode === 'me-shots') {
+    // 中土世界四个场景的截图 -> shots/me_scene1..4.png
+    for (let i = 1; i <= 4; i++) {
+      await page.goto(`${url}?capture&world=middleearth&scene=${i}`);
+      await page.waitForFunction(() => window.__ready, null, { timeout: 90000 });
+      await page.evaluate(() => window.__step(1 / 30, 120));
+      await page.screenshot({ path: `${out}/me_scene${i}.png` });
+      console.log('me shot', i);
+    }
+  } else if (mode === 'me-demo') {
+    // 中土世界演示（约 16 秒）：洛汗（骑兵、王城）→ 魔多（熔岩、火山、黑塔、行军纵队）
+    const N = 480, fdir = `${out}/me_frames`, start = process.argv[4] || '2', next = +(process.argv[5] || 3), at = +(process.argv[6] || 225);
+    fs.rmSync(fdir, { recursive: true, force: true }); fs.mkdirSync(fdir, { recursive: true });
+    await page.goto(`${url}?capture&world=middleearth&scene=${start}`);
+    await page.waitForFunction(() => window.__ready, null, { timeout: 90000 });
+    for (let f = 0; f < N; f++) {
+      await page.evaluate(([f, next, at]) => { if (f === at) window.__goto(next); window.__step(1 / 30, 1); }, [f, next, at]);
+      await page.screenshot({ path: `${fdir}/${String(f).padStart(4, '0')}.jpg`, type: 'jpeg', quality: 92 });
+      if (f % 60 === 0) console.log('me frame', f);
+    }
+    execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.jpg -c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p -movflags +faststart ${out}/demo_middleearth.mp4`);
+    fs.rmSync(fdir, { recursive: true, force: true });
+    console.log('me demo done');
   } else if (mode === 'frames') {
     // 对照视频用：逐帧 JPEG（30 fps），由 scripts/compare.sh 与原视频拼接
     const scene = process.argv[4] || '1', N = +(process.argv[5] || 450);

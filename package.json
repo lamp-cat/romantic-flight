@@ -9,7 +9,10 @@
     "shots": "vite build && node scripts/shoot.mjs shots shots",
     "video": "vite build && node scripts/shoot.mjs video shots 1",
     "demo": "vite build && node scripts/shoot.mjs demo shots 3",
-    "traffic": "vite build && node scripts/shoot.mjs traffic shots"
+    "traffic": "vite build && node scripts/shoot.mjs traffic shots",
+    "middleearth": "vite --open '/?world=middleearth'",
+    "shots:me": "vite build && node scripts/shoot.mjs me-shots shots",
+    "demo:me": "vite build && node scripts/shoot.mjs me-demo shots"
   },
   "keywords": [],
   "author": "",

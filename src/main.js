@@ -3,9 +3,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { groundGLSL, postFrag } from './groundShader.js';
 import { FEAT, fx, BLOCKED } from './layout.js';
 import { Traffic, Train } from './traffic.js';
+import * as ME from './middleearth.js';
 
 // ---------------------------------------------------------------- 配置
-const SCENES = [
+const EARTH_SCENES = [
   { name: 'Niigata, Japan', sub: 'Spring · sakura over flooded paddies', lat: 37.915, lon: 139.399,
     clouds: { count: 4, min: 0.5, max: 0.75 }, birds: { n: 7, color: [1, 1, 1] } },
   { name: 'La Pampa, Argentina', sub: 'Spring · open grassland', lat: -36.854, lon: -64.050,
@@ -23,6 +24,12 @@ const CHUNK = 160;
 const AUTO_SECONDS = 20;
 
 const params = new URLSearchParams(location.search);
+// ?world=middleearth 切换到中土世界的四个场景（默认是地球）
+const IS_ME = ['middleearth', 'me'].includes((params.get('world') || '').toLowerCase().replace(/[^a-z]/g, ''));
+const SCENES = IS_ME ? ME.SCENES : EARTH_SCENES;
+const BLK = IS_ME ? ME.BLOCKED : BLOCKED;
+const groundH = IS_ME ? ME.height : () => 0;
+if (IS_ME) document.title = 'Flyover · Middle-earth · 中土世界航拍';
 const CAPTURE = params.has('capture');
 let autoCycle = params.get('auto') !== '0' && !CAPTURE;
 const PAINT = params.has('paint') ? parseFloat(params.get('paint')) : 1;
@@ -68,7 +75,7 @@ const postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
 // 灯光：柔和环境光 + 左上方太阳，阴影投向右下
 const AMB = 0.6, DIR = 0.46;
-scene.add(new THREE.HemisphereLight(0xe4ebff, 0xdfe6ff, AMB * Math.PI * 1.04));
+const hemi = new THREE.HemisphereLight(0xe4ebff, 0xdfe6ff, AMB * Math.PI * 1.04); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff6ea, DIR * Math.PI / 0.84);
 const SUN_DIR = new THREE.Vector3(-0.42, 1, -0.55).normalize();
 sun.castShadow = true;
@@ -80,14 +87,15 @@ scene.add(sun, sun.target);
 // ---------------------------------------------------------------- 材质
 const groundUniforms = { uBiome: { value: 0 }, uTime: { value: 0 } };
 const groundMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-groundMat.onBeforeCompile = (sh) => {
+if (IS_ME) ME.patchGround(groundMat, groundUniforms);
+else groundMat.onBeforeCompile = (sh) => {
   Object.assign(sh.uniforms, groundUniforms);
   sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <begin_vertex>',
     '#include <begin_vertex>\n vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + groundGLSL)
     .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( groundColor(vWPos.xz), opacity );');
 };
-const groundGeo = new THREE.PlaneGeometry(1800, CHUNK).rotateX(-Math.PI / 2);
+const groundGeo = IS_ME ? ME.groundGeo(1800, CHUNK) : new THREE.PlaneGeometry(1800, CHUNK).rotateX(-Math.PI / 2);
 
 const lowPoly = (o = {}) => new THREE.MeshLambertMaterial({ flatShading: true, ...o });
 const blobGeo = new THREE.IcosahedronGeometry(1, 1);
@@ -166,6 +174,7 @@ class Chunk {
     this.anim = { cattle: new Float32Array(220 * AF), zebra: new Float32Array(360 * AF) };
     this.herds = [];
     this.group.add(this.ground, this.blobs, this.trunk, this.petals, this.cattle, this.zebra, this.house, this.roof, this.fence);
+    if (IS_ME) this.me = new ME.Deco(this.group);
   }
   clearPonds() { for (const p of this.ponds) { this.group.remove(p); p.geometry.dispose(); } this.ponds = []; }
   fill(index, biome, seed) {
@@ -174,7 +183,8 @@ class Chunk {
     this.R = R;
     this.ground.position.set(0, 0, z0 + CHUNK / 2);
     this.clearPonds(); this.herds = [];
-    const blocked = BLOCKED[biome];
+    const blocked = BLK[biome];
+    const H = (x, z) => groundH(biome, x, z);
     const free = (z, pad = 0, xr = XR) => { for (let k = 0; k < 40; k++) { const x = (R() * 2 - 1) * xr; if (!blocked(x - pad, z) && !blocked(x + pad, z) && !blocked(x, z)) return x; } return -420; };
     const n = { blobs: 0, trunk: 0, petals: 0, cattle: 0, zebra: 0, house: 0, roof: 0, fence: 0 };
     const put = (mesh, key, x, y, z, sx, sy, sz, color, ry = 0, rnd = false) => {
@@ -186,15 +196,15 @@ class Chunk {
     };
     // 树：树干 + 若干低多边形球团（flat < 1 时为金合欢式伞状树冠）
     const tree = (x, z, r, cols, { flat = 0.85, subs = 3, h = 0.9, spread = 0.6 } = {}) => {
-      const cy = r * h;
-      put(this.trunk, 'trunk', x, 0, z, r * 0.16, cy, r * 0.16, trunkMat.color, R() * 6);
-      put(this.blobs, 'blobs', x, cy, z, r, r * flat, r, cols[0], 0, true);
+      const cy = r * h, y0 = IS_ME ? H(x, z) - 0.5 : 0;
+      put(this.trunk, 'trunk', x, y0, z, r * 0.16, cy, r * 0.16, trunkMat.color, R() * 6);
+      put(this.blobs, 'blobs', x, y0 + cy, z, r, r * flat, r, cols[0], 0, true);
       for (let k = 0; k < subs; k++) {
         const a = R() * 6.28, d = r * (spread * 0.7 + R() * spread * 0.6), rr = r * (0.5 + R() * 0.3);
-        put(this.blobs, 'blobs', x + Math.cos(a) * d, cy + (R() - 0.2) * r * 0.35 * flat, z + Math.sin(a) * d, rr, rr * flat, rr, cols[1 + (k % (cols.length - 1))], 0, true);
+        put(this.blobs, 'blobs', x + Math.cos(a) * d, y0 + cy + (R() - 0.2) * r * 0.35 * flat, z + Math.sin(a) * d, rr, rr * flat, rr, cols[1 + (k % (cols.length - 1))], 0, true);
       }
       // 顶部高光团
-      put(this.blobs, 'blobs', x - r * 0.2, cy + r * 0.45 * flat, z - r * 0.2, r * 0.5, r * 0.5 * flat, r * 0.5, cols[cols.length - 1], 0, true);
+      put(this.blobs, 'blobs', x - r * 0.2, y0 + cy + r * 0.45 * flat, z - r * 0.2, r * 0.5, r * 0.5 * flat, r * 0.5, cols[cols.length - 1], 0, true);
     };
     const rz = () => z0 + R() * CHUNK;
     const addAnimal = (kind, x, z, h, herd, scale, color) => {
@@ -205,7 +215,13 @@ class Chunk {
       a[o + 6] = R() * 6.28; a[o + 7] = R() * 4; a[o + 8] = herd; a[o + 9] = scale;
     };
 
-    if (biome === 0) {
+    if (IS_ME) {
+      const pond = (x, z, r) => { const seedP = index * 31 + 5, y = H(x, z) + 0.6;
+        const rim = new THREE.Mesh(pondGeo(rng(seedP), r, 4), pondRimMat), w = new THREE.Mesh(pondGeo(rng(seedP), r, 0), pondMat);
+        rim.position.set(x, y - 0.1, z); w.position.set(x, y, z); rim.receiveShadow = w.receiveShadow = true;
+        this.ponds.push(rim, w); this.group.add(rim, w); };
+      this.me.fill({ index, biome, z0, R, rz, free, blocked, tree, addAnimal, pond, H });
+    } else if (biome === 0) {
       const pinks = [sc(0.97, 0.66, 0.76), sc(0.99, 0.76, 0.84), sc(0.93, 0.58, 0.70), sc(1, 0.86, 0.91)];
       const nt = 3 + Math.floor(R() * 3);
       for (let t = 0; t < nt; t++) {
@@ -287,7 +303,7 @@ class Chunk {
   }
   // 动物行为：吃草/慢走交替、转向、松散群聚、避开河流道路、走路时轻微起伏
   updateAnimals(dt, t) {
-    const blocked = BLOCKED[this.biome];
+    const blocked = BLK[this.biome];
     for (const h of this.herds) {
       h.h += (Math.sin(t * 0.13 + h.x * 0.01) * 0.12) * dt;
       const nx = h.x - Math.sin(h.h) * 1.1 * dt, nz = h.z - Math.cos(h.h) * 1.1 * dt;
@@ -322,7 +338,7 @@ class Chunk {
         const ph = a[o + 6], s = a[o + 9];
         const moving = Math.min(1, sp / 2);
         a[o] = x; a[o + 1] = z; a[o + 2] = h;
-        dummy.position.set(x, Math.abs(Math.sin(ph)) * 0.45 * moving, z);
+        dummy.position.set(x, groundH(this.biome, x, z) + Math.abs(Math.sin(ph)) * 0.45 * moving, z);
         // 吃草时低头（前倾），走路时左右轻摆
         dummy.rotation.set((1 - moving) * (0.12 + 0.06 * Math.sin(ph * 0.7)), h + Math.sin(ph) * 0.06 * moving, Math.sin(ph) * 0.05 * moving, 'YXZ');
         dummy.scale.set(s, s, s); dummy.updateMatrix();
@@ -382,8 +398,11 @@ const plane = makePlane(); scene.add(plane);
 
 // ---------------------------------------------------------------- 车辆
 // 车流与列车见 src/traffic.js
-const traffic = new Traffic(scene);
-const train = new Train(scene);
+const traffic = IS_ME ? null : new Traffic(scene);
+const train = IS_ME ? null : new Train(scene);
+// 中土世界：马车、骑兵、旅人、行军纵队（见 src/middleearth.js）
+const life = IS_ME ? new ME.Life(scene) : null;
+const LOOK_BASE = { hemi: hemi.intensity, sun: sun.intensity };
 
 // ---------------------------------------------------------------- 鸟群：扇动翅膀的 V 形小鸟
 const birdGeo = (() => {
@@ -417,14 +436,16 @@ function applyScene(i) {
     c.position.set((R() * 2 - 1) * 330, 110 + R() * 50, (R() * 2 - 1) * 330);
     c.rotation.y = R() * 6;
   });
-  traffic.reset(i, state.camZ, rng(i * 991 + state.seed * 7 + 5));
-  train.reset(i, state.camZ, rng(i * 313 + state.seed * 3 + 1), 1.0);
+  traffic?.reset(i, state.camZ, rng(i * 991 + state.seed * 7 + 5));
+  train?.reset(i, state.camZ, rng(i * 313 + state.seed * 3 + 1), 1.0);
+  life?.reset(i, state.camZ, rng(i * 577 + state.seed * 5 + 3), groundH);
+  if (IS_ME) ME.applyLook(cfg, { hemi, sun, cloudMat, base: LOOK_BASE });
   // 鸟群
   birdState.length = 0;
   birdMat.color.copy(sc(...cfg.birds.color));
   const bx = (R() * 2 - 1) * 200, bz = -200 - R() * 100, bh = (R() - 0.5) * 1.2;
   for (let k = 0; k < cfg.birds.n; k++) {
-    birdState.push({ x: bx + gauss(R) * 30, z: bz + gauss(R) * 30, y: 38 + R() * 10, h: bh + (R() - 0.5) * 0.3, ph: R() * 6.28, f: 7 + R() * 3 });
+    birdState.push({ x: bx + gauss(R) * 30, z: bz + gauss(R) * 30, y: (cfg.birds.y || 38) + R() * 10, h: bh + (R() - 0.5) * 0.3, ph: R() * 6.28, f: 7 + R() * 3 });
   }
   birds.count = birdState.length;
   document.getElementById('loc').textContent = cfg.name;
@@ -506,10 +527,11 @@ function update(dt) {
       const s = cfg.clouds.min + R() * (cfg.clouds.max - cfg.clouds.min); c.scale.set(s, s, s);
     }
   });
-  traffic.update(dt, state.camZ, state.camX);
-  train.update(dt, state.camZ);
+  traffic?.update(dt, state.camZ, state.camX);
+  train?.update(dt, state.camZ);
+  life?.update(dt, state.camZ);
   // 动物
-  for (const [, ch] of activeChunks) ch.updateAnimals(dt, t);
+  for (const [, ch] of activeChunks) { ch.updateAnimals(dt, t); ch.me?.update(t); }
   // 鸟：成群缓慢飞行，扇翅；飞出画面后在前方重新出现
   let lag = 0;
   for (const b of birdState) lag = Math.max(lag, b.z - state.camZ);
@@ -519,10 +541,12 @@ function update(dt) {
   }
   birdState.forEach((b, i) => {
     b.h += Math.sin(t * 0.3 + i) * 0.05 * dt;
-    b.x -= Math.sin(b.h) * 16 * dt; b.z -= Math.cos(b.h) * 16 * dt; b.ph += dt * b.f;
+    const bv = cfg.birds.speed || 16;
+    b.x -= Math.sin(b.h) * bv * dt; b.z -= Math.cos(b.h) * bv * dt; b.ph += dt * b.f / (cfg.birds.scale || 1) ** 0.5;
     const flap = Math.sin(b.ph);
     dummy.position.set(b.x, b.y + flap * 0.4, b.z);
-    dummy.rotation.set(0, b.h, 0); dummy.scale.set(0.35 + 0.65 * Math.abs(flap), 1, 1); dummy.updateMatrix();
+    const bs = cfg.birds.scale || 1;
+    dummy.rotation.set(0, b.h, 0); dummy.scale.set((0.35 + 0.65 * Math.abs(flap)) * bs, bs, bs); dummy.updateMatrix();
     birds.setMatrixAt(i, dummy.matrix);
   });
   birds.instanceMatrix.needsUpdate = true;
@@ -540,6 +564,7 @@ function update(dt) {
   const ui = document.getElementById('ui'); ui.style.opacity = Math.min(1, state.reveal * 1.4);
 
   // 经纬度
+  if (IS_ME) { coordEl.textContent = ME.coords(cfg, state); return; }
   const lat = cfg.lat + state.dist * DEG_PER_UNIT;
   const lon = cfg.lon + state.camX * DEG_PER_UNIT / Math.cos(cfg.lat * Math.PI / 180) - state.dist * DEG_PER_UNIT * 0.12;
   coordEl.textContent = `${Math.abs(lat).toFixed(3)}° ${lat >= 0 ? 'N' : 'S'}  ${Math.abs(lon).toFixed(3)}° ${lon >= 0 ? 'E' : 'W'}`;
