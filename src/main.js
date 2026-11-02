@@ -2,17 +2,18 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { groundGLSL, postFrag } from './groundShader.js';
 import { FEAT, fx, BLOCKED } from './layout.js';
+import { Traffic, Train } from './traffic.js';
 
 // ---------------------------------------------------------------- 配置
 const SCENES = [
   { name: 'Niigata, Japan', sub: 'Spring · sakura over flooded paddies', lat: 37.915, lon: 139.399,
-    clouds: { count: 4, min: 0.5, max: 0.75 }, cars: [{ f: 'nRoad', o: -2.5, v: -14, color: [0.95, 0.95, 0.93] }], birds: { n: 7, color: [1, 1, 1] } },
+    clouds: { count: 4, min: 0.5, max: 0.75 }, birds: { n: 7, color: [1, 1, 1] } },
   { name: 'La Pampa, Argentina', sub: 'Spring · open grassland', lat: -36.854, lon: -64.050,
-    clouds: { count: 2, min: 0.8, max: 1.1 }, cars: [{ f: 'pRoad', o: 0, v: -12, color: [0.86, 0.18, 0.15] }], birds: { n: 9, color: [0.25, 0.22, 0.2] } },
+    clouds: { count: 2, min: 0.8, max: 1.1 }, birds: { n: 9, color: [0.25, 0.22, 0.2] } },
   { name: 'Serengeti, Tanzania', sub: 'Dry season · long grass', lat: -2.502, lon: 35.041,
-    clouds: { count: 3, min: 1.7, max: 2.3 }, cars: [{ f: 'sTrack', o: 0, v: -8, color: [0.55, 0.6, 0.42] }], birds: { n: 10, color: [0.22, 0.2, 0.18] } },
+    clouds: { count: 3, min: 1.7, max: 2.3 }, birds: { n: 10, color: [0.22, 0.2, 0.18] } },
   { name: 'Punjab, India', sub: 'Late winter · mustard in flower', lat: 30.820, lon: 76.192,
-    clouds: { count: 6, min: 0.65, max: 0.95 }, cars: [{ f: 'jRoad', o: -2.5, v: -16, color: [0.85, 0.2, 0.18] }, { f: 'jRoad', o: 2.5, v: 10, color: [0.95, 0.95, 0.92] }], birds: { n: 8, color: [0.95, 0.95, 0.95] } },
+    clouds: { count: 6, min: 0.65, max: 0.95 }, birds: { n: 8, color: [0.95, 0.95, 0.95] } },
 ];
 const ART = { cx: 360, cy: 310, hx: 296, hy: 222 };       // 画面矩形（720 设计单位舞台）
 const RECT = { x: 40, y: 64, w: 640, h: 492 };            // 画布覆盖的设计区域
@@ -380,13 +381,9 @@ function makePlane() {
 const plane = makePlane(); scene.add(plane);
 
 // ---------------------------------------------------------------- 车辆
-function makeCar() {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(boxGeo, lowPoly()); body.scale.set(3.0, 1.5, 5.6); body.position.y = 0.9;
-  const cab = new THREE.Mesh(boxGeo, lowPoly({ color: sc(0.9, 0.92, 0.95) })); cab.scale.set(2.5, 1.0, 2.6); cab.position.set(0, 2.0, 0.3);
-  body.castShadow = cab.castShadow = true; g.add(body, cab); g.userData.body = body; return g;
-}
-const cars = [makeCar(), makeCar()]; cars.forEach((c) => { c.visible = false; scene.add(c); });
+// 车流与列车见 src/traffic.js
+const traffic = new Traffic(scene);
+const train = new Train(scene);
 
 // ---------------------------------------------------------------- 鸟群：扇动翅膀的 V 形小鸟
 const birdGeo = (() => {
@@ -420,12 +417,8 @@ function applyScene(i) {
     c.position.set((R() * 2 - 1) * 330, 110 + R() * 50, (R() * 2 - 1) * 330);
     c.rotation.y = R() * 6;
   });
-  cars.forEach((c, k) => {
-    const d = cfg.cars[k]; c.visible = !!d; if (!d) return;
-    c.userData.body.material.color.copy(sc(...d.color));
-    c.userData.v = d.v; c.userData.f = FEAT[d.f]; c.userData.o = d.o;
-    c.position.set(fx(FEAT[d.f], 0) + d.o, 0, (R() * 2 - 1) * 140);
-  });
+  traffic.reset(i, state.camZ, rng(i * 991 + state.seed * 7 + 5));
+  train.reset(i, state.camZ, rng(i * 313 + state.seed * 3 + 1), 1.0);
   // 鸟群
   birdState.length = 0;
   birdMat.color.copy(sc(...cfg.birds.color));
@@ -513,16 +506,8 @@ function update(dt) {
       const s = cfg.clouds.min + R() * (cfg.clouds.max - cfg.clouds.min); c.scale.set(s, s, s);
     }
   });
-  cars.forEach((c) => {
-    if (!c.visible) return;
-    c.position.z += c.userData.v * dt;
-    if (c.position.z - state.camZ > 320) c.position.z = state.camZ - 300 - Math.random() * 300;
-    if (c.position.z - state.camZ < -700) c.position.z = state.camZ + 300;
-    const z = c.position.z, f = c.userData.f;
-    c.position.x = fx(f, z) + c.userData.o;
-    const slope = (fx(f, z - 1) - fx(f, z + 1)) / 2;
-    c.rotation.y = (c.userData.v > 0 ? Math.PI : 0) + Math.atan(slope) * (c.userData.v > 0 ? -1 : 1);
-  });
+  traffic.update(dt, state.camZ, state.camX);
+  train.update(dt, state.camZ);
   // 动物
   for (const [, ch] of activeChunks) ch.updateAnimals(dt, t);
   // 鸟：成群缓慢飞行，扇翅；飞出画面后在前方重新出现

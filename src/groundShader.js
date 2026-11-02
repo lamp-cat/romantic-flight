@@ -41,6 +41,24 @@ vec3 river(vec2 p, float cx, float hw, vec3 deep, vec3 shallow, vec3 bank, vec3 
   return col;
 }
 
+// 铁路：路基（可选）+ 碎石道床 + 枕木 + 两条钢轨；full=0 时只画钢轨（用于平交道口压在道路上）
+vec3 railway(vec2 p, float cx, vec3 col, vec3 bank, float full){
+  float dx = p.x - cx + wob(p.y, 11.)*.2;
+  if (full > .5) {
+    col = mix(col, s2l(bank), band(dx, 10.5, 1.4)*.85);
+    vec3 bal = vec3(.82,.79,.72)*(.88+.16*vn(p*1.4));
+    col = mix(col, s2l(bal), band(dx + (vn(p*vec2(.4,.08))-.5)*.8, 6.2, .7));
+    float sl = fract(p.y/4.2);
+    col = mix(col, s2l(vec3(.58,.47,.38)*(.9+.2*vn(p*2.))), band(sl-.5, .2, .07)*band(dx, 4.7, .35)*.75);
+  } else {
+    float sl = fract(p.y/4.2);
+    col = mix(col, s2l(vec3(.62,.56,.48)), band(dx, 4.2, .4)*.5);
+  }
+  col = mix(col, s2l(vec3(.40,.40,.45)), band(abs(dx)-2.4, .55, .25));
+  col = mix(col, s2l(vec3(.84,.85,.88)), band(abs(dx)-2.4, .2, .15));
+  return col;
+}
+
 // 不规则一维分割：返回 (序号, 起点, 终点)
 vec3 part(float x, float W, float J, float seed){
   float i = floor(x/W);
@@ -86,6 +104,12 @@ vec3 niigata(vec2 p){
   col = mix(col, s2l(tan), 1.-smoothstep(1.4, 2.0, vr + (vn(p*.4)-.5)*.5));
   col = mix(col, s2l(vec3(.42,.62,.56)), (1.-smoothstep(1.8, 2.8, hr))*.3);
   col = mix(col, s2l(tan), (1.-smoothstep(1.0, 1.6, hr + (vn(p*.4)-.5)*.5))*.9);
+  // 铁路（东侧，穿过农道处为平交道口）
+  col = railway(p, nRail(p.y), col, vec3(.60,.84,.42), 1.);
+  { float rr = p.x - nRail(p.y);
+    float onR = (1.-smoothstep(1.2, 1.9, hr)) * band(rr, 11., 1.);
+    col = mix(col, railway(p, nRail(p.y), s2l(tan), vec3(0.), 0.), onR);
+    col = mix(col, s2l(vec3(.96,.95,.90)), band(abs(rr)-8.5, .5, .25)*(1.-smoothstep(1.,1.6,hr))); }
   // 主路
   float rx = p.x - nRoad(p.y);
   col = mix(col, s2l(vec3(.56,.82,.38)), band(rx, 8.5, .8));
@@ -168,6 +192,7 @@ vec3 punjab(vec2 p){
   fc = mix(fc, fc*vec3(.88,.92,.8), (1.-smoothstep(13., 26., edge))*.4);
   vec3 gc = mix(vec3(.18,.52,.18), vec3(.30,.64,.24), paint(p*1.4));
   vec3 col = s2l(mix(gc, fc, smoothstep(13., 14.5, edge)));
+  col = railway(p, jRail(p.y), col, vec3(.70,.66,.50), 1.);
   float rc = jRoad(p.y), rx = p.x - rc;
   col = mix(col, s2l(vec3(.70,.70,.62)), band(rx, 6.6, .5));
   col = mix(col, s2l(vec3(.84,.81,.75)*(.95+.08*vn(p*.5))), band(rx, 5.6, .4));
@@ -176,6 +201,11 @@ vec3 punjab(vec2 p){
     float sz = p.y - zc - (p.x-rc)*.08 + sin(p.x*.012)*6.;
     col = mix(col, s2l(vec3(.70,.70,.64)), band(sz, 4.6, .5));
     col = mix(col, s2l(vec3(.82,.80,.76)), band(sz, 3.8, .4));
+    // 平交道口：钢轨压在支路上，两侧画白色停止线
+    float rr = p.x - jRail(p.y);
+    float onRoad = band(sz, 4.6, .5);
+    col = mix(col, railway(p, jRail(p.y), col, vec3(0.), 0.), onRoad);
+    col = mix(col, s2l(vec3(.97,.96,.92)), band(abs(rr)-9., .6, .3)*band(sz, 3.4, .3));
   }
   col = river(p, jRiver(p.y), 17., s2l(vec3(.15,.36,.78)), s2l(vec3(.22,.48,.86)), s2l(vec3(.86,.82,.68)), s2l(vec3(.25,.58,.22)), col, 6.);
   return col;

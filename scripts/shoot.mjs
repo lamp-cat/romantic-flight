@@ -79,6 +79,20 @@ try {
     }
     execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.jpg -c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p -movflags +faststart ${out}/demo_animals.mp4`);
     console.log('demo done');
+  } else if (mode === 'traffic') {
+    // 车流 + 列车演示：旁遮普（列车、车流、支路车辆、少量牛）→ 第 9.5 秒切到塞伦盖蒂（斑马群、越野车）
+    const N = 480, fdir = `${out}/traffic_frames`;
+    fs.rmSync(fdir, { recursive: true, force: true }); fs.mkdirSync(fdir, { recursive: true });
+    await page.goto(`${url}?capture&scene=4`);
+    await page.waitForFunction(() => window.__ready, null, { timeout: 60000 });
+    for (let f = 0; f < N; f++) {
+      await page.evaluate((f) => { if (f === 285) window.__goto(2); window.__step(1 / 30, 1); }, f);
+      await page.screenshot({ path: `${fdir}/${String(f).padStart(4, '0')}.jpg`, type: 'jpeg', quality: 92 });
+      if (f % 60 === 0) console.log('traffic frame', f);
+    }
+    execSync(`ffmpeg -v error -y -framerate 30 -i ${fdir}/%04d.jpg -c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p -movflags +faststart ${out}/demo_traffic.mp4`);
+    fs.rmSync(fdir, { recursive: true, force: true });
+    console.log('traffic done');
   } else if (mode === 'frames') {
     // 对照视频用：逐帧 JPEG（30 fps），由 scripts/compare.sh 与原视频拼接
     const scene = process.argv[4] || '1', N = +(process.argv[5] || 450);

@@ -47,10 +47,19 @@ npm run preview    # 预览构建结果
   云是中心团 + 圆瓣 + 小鼓包的“花朵”形，边缘做喷溅虚化；樱花树更大、带树干，花瓣更多更大；金合欢是扁伞状大树冠；
   撕纸边缘改成干笔飞白式喷点，并锚定在世界坐标上随飞行变化。
 
+- **车流**（`src/traffic.js`）：每个有路的场景都有双向车流——轿车、小卡车、偶尔一辆巴士（Pampa 是皮卡、Serengeti 是越野车），
+  柔和配色；车辆前后轴都落在 `layout.js` 的道路曲线上，朝向随弯道变化；每车速度不同，同车道跟车保持车距，不会重叠；
+  驶出镜头前后约 560 单位后在另一端重新出现。旁遮普的车还会拐进/驶出主路西侧的支路。数量刻意保持适中。
+- **铁路与列车**：新潟东侧、旁遮普西侧各有一条缓弯铁路（路基 + 碎石道床 + 枕木 + 双轨，全部画在地面着色器里），
+  与农道/支路相交处是平交道口（钢轨压在路面上、两侧白色停止线）。新潟跑白色新干线（樱粉车顶线、流线车头），
+  旁遮普跑红色机车 + 蓝色客车；每节车厢的前后转向架分别取轨道上的点，所以整列车沿弯道铰接弯曲。
+  列车上下行交替、间隔几秒周期性出现，都投下阴影。
+
 ## 截图 / 录屏
 ```bash
 npm run shots   # 无头 Chrome（SwiftShader 软件渲染）截 4 个场景 -> shots/scene1..4.png
 npm run video   # 8 秒 demo -> shots/demo.mp4（需要 ffmpeg）
+npm run traffic # 16 秒车流 + 列车演示（旁遮普 → 塞伦盖蒂）-> shots/demo_traffic.mp4
 npm run demo    # 16 秒 Serengeti 演示（斑马走动 + 自动驾驶 → 指针接管 → 静止后回到自动驾驶）-> shots/demo_animals.mp4
 ```
 `shots/compare_sceneN.png` 左边是参考视频帧，右边是本实现；`shots/motion_*.png` 是跟随地面的连续裁切，可看出动物在动。截图脚本默认用 `/usr/bin/google-chrome`，可用 `CHROME=...` 覆盖。
@@ -60,5 +69,6 @@ npm run demo    # 16 秒 Serengeti 演示（斑马走动 + 自动驾驶 → 指�
 - `index.html`、`src/style.css`：页面与底部 UI
 - `src/main.js`：场景、区块流式加载、物体生成、飞机/云/车、交互、后期
 - `src/groundShader.js`：地面着色器和后期着色器
-- `src/layout.js`：道路/河流蜿蜒曲线（JS 与 GLSL 共用）和“不可站立区域”
+- `src/traffic.js`：车流与列车
+- `src/layout.js`：道路/河流/铁路蜿蜒曲线（JS 与 GLSL 共用）和“不可站立区域”
 - `scripts/shoot.mjs`：截图和录屏脚本

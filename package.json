@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "shots": "vite build && node scripts/shoot.mjs shots shots",
     "video": "vite build && node scripts/shoot.mjs video shots 1",
-    "demo": "vite build && node scripts/shoot.mjs demo shots 3"
+    "demo": "vite build && node scripts/shoot.mjs demo shots 3",
+    "traffic": "vite build && node scripts/shoot.mjs traffic shots"
   },
   "keywords": [],
   "author": "",
