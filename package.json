@@ -16,7 +16,8 @@
     "tour:me": "vite build && node scripts/shoot.mjs me-tour shots",
     "landmarks": "vite --open '/?world=landmarks'",
     "shots:lm": "vite build && node scripts/shoot.mjs lm-shots shots",
-    "demo:lm": "vite build && node scripts/shoot.mjs lm-demo shots"
+    "demo:lm": "vite build && node scripts/shoot.mjs lm-demo shots",
+    "tour:lm": "vite build && node scripts/shoot.mjs lm-tour shots"
   },
   "keywords": [],
   "author": "",

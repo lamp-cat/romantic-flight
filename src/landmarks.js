@@ -6,6 +6,8 @@ import { groundHeader, groundCommonGLSL } from './groundShader.js';
 import { SHARED, L, PERIOD, ORIGIN, SY_X, local, kindOf } from './landmarks_layout.js';
 import { lmGroundGLSL } from './landmarks_ground.js';
 import { buildMonument, sc } from './landmarks_models.js';
+import { Builder, rng } from './lm/kit.js';
+import { CITIES } from './lm/cities.js';
 
 const lowPoly = (o = {}) => new THREE.MeshLambertMaterial({ flatShading: true, ...o });
 
@@ -20,6 +22,7 @@ export const SCENES = [
     zoom: 1.45, speed: 0.7, tilt: 0.62, planeY: 92, clouds: { count: 1, min: 0.5, max: 0.7, y: 125 }, birds: { n: 0, color: [0.2, 0.2, 0.2] }, look: 'warm' },
   { name: 'Sydney Opera House', sub: 'Bennelong Point · Sydney Harbour', lat: -33.8568, lon: 151.2153,
     zoom: 1.2, speed: 0.7, tilt: 0.6, planeY: 96, clouds: { count: 2, min: 0.5, max: 0.75, y: 135 }, birds: { n: 4, color: [0.97, 0.97, 0.97], y: 55 }, look: 'bright' },
+  ...CITIES.map((c) => ({ speed: 0.7, birds: { n: 0, color: [0.2, 0.2, 0.2] }, look: 'day', ...c.scene })),
 ];
 const DEG = 1 / 222640;   // 1 单位 ≈ 2 米 → 纬度
 export const coords = (cfg, st) => {
@@ -30,6 +33,8 @@ const LOOKS = {
   day: { sky: 0xe4ebff, gnd: 0xdfe6ff, hk: 1.0, sun: 0xfff3e4, sk: 1.0, cloud: [1, 1, 1], cem: [0.40, 0.42, 0.46] },
   warm: { sky: 0xeee8f6, gnd: 0xe6e0da, hk: 1.0, sun: 0xfff0dc, sk: 1.02, cloud: [1, 1, 1], cem: [0.42, 0.42, 0.44] },
   bright: { sky: 0xe0ecff, gnd: 0xdce8f6, hk: 1.02, sun: 0xfff8ec, sk: 1.02, cloud: [1, 1, 1], cem: [0.42, 0.44, 0.48] },
+  desert: { sky: 0xf2ead8, gnd: 0xf0e2c8, hk: 1.0, sun: 0xfff0d6, sk: 1.06, cloud: [1, 1, 1], cem: [0.44, 0.42, 0.40] },
+  soft: { sky: 0xe6ecf2, gnd: 0xe2e6e4, hk: 1.04, sun: 0xfff4e6, sk: 0.94, cloud: [1, 1, 1], cem: [0.42, 0.43, 0.46] },
 };
 export function applyLook(cfg, { hemi, sun, cloudMat, base }) {
   const Lk = LOOKS[cfg.look] || LOOKS.day;
@@ -40,7 +45,7 @@ export function applyLook(cfg, { hemi, sun, cloudMat, base }) {
 
 // ---------------------------------------------------------------- 地形与地面
 export const height = (b, x, z) => L.lmHeight(b, x, z);
-export const BLOCKED = [0, 1, 2, 3].map(() => () => false);
+export const BLOCKED = SCENES.map(() => () => false);
 export const groundGeo = (w, d) => new THREE.PlaneGeometry(w, d, Math.round(w / 10), Math.round(d / 10)).rotateX(-Math.PI / 2);
 export function patchGround(mat, uniforms) {
   mat.onBeforeCompile = (sh) => {
@@ -64,7 +69,10 @@ export class Monuments {
   constructor(scene) { this.scene = scene; this.cache = {}; this.copies = []; this.b = -1; }
   set(b) {
     for (const c of this.copies) this.scene.remove(c);
-    if (!this.cache[b]) this.cache[b] = buildMonument(b);
+    if (!this.cache[b]) {
+      if (b < 4) this.cache[b] = buildMonument(b);
+      else { const B = new Builder(); CITIES[b - 4].build(B, { L, R: rng(4242 + b * 17), H: (x, z) => L.lmHeight(b, x, z + ORIGIN[b][0]) }); this.cache[b] = B.build(); }
+    }
     const g = this.cache[b];
     this.copies = [g, g.clone()];
     for (const c of this.copies) this.scene.add(c);
@@ -81,6 +89,8 @@ export class Monuments {
 const boxGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
 const gableGeo = new THREE.CylinderGeometry(1, 1, 1, 3).rotateX(-Math.PI / 2).translate(0, 0.5, 0).scale(1 / 1.732, 1 / 1.5, 1);
 const hipGeo = new THREE.ConeGeometry(0.75, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0);
+const cylGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 12).translate(0, 0.5, 0);
+const domeGeo = new THREE.SphereGeometry(0.5, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
 const dummy = new THREE.Object3D();
 function inst(geo, mat, n, shadow = true) {
   const m = new THREE.InstancedMesh(geo, mat, n);
@@ -108,11 +118,12 @@ const TREES = {
 };
 export class Deco {
   constructor(group) {
-    this.m = { body: inst(boxGeo, MAT.b, 1500), top: inst(boxGeo, MAT.b, 700), gable: inst(gableGeo, MAT.r, 1300), hip: inst(hipGeo, MAT.r, 300) };
+    this.m = { body: inst(boxGeo, MAT.b, 1600), top: inst(boxGeo, MAT.b, 1100), gable: inst(gableGeo, MAT.r, 1300), hip: inst(hipGeo, MAT.r, 1000), cyl: inst(cylGeo, MAT.b, 300), dome: inst(domeGeo, MAT.r, 200) };
     for (const k in this.m) group.add(this.m[k]);
   }
   fill(c) {
     const { biome: b, z0, R, tree } = c;
+    
     const n = {}; for (const k in this.m) n[k] = 0;
     const put = (key, x, y, z, sx, sy, sz, color, ry = 0) => {
       const mesh = this.m[key]; if (n[key] >= mesh.instanceMatrix.count) return;
@@ -129,7 +140,35 @@ export class Deco {
       const zs = Math.ceil(z0 / step) * step;
       for (let z = zs; z < z0 + 160; z += step) for (let x = -XR; x <= XR; x += step) fn(x + (R() - 0.5) * step * 0.25, z + (R() - 0.5) * step * 0.25);
     };
-    if (b === 0) {
+    if (b >= 4) {
+      const D = { b, z0, R, L, sc, P, TREES, PAL, put, pick, K, allK, lattice, tree, XR, H: c.H, local: (z) => local(b, z),
+        // 局部 z 的一条东西向线在本区块里的世界 z（不在本区块则 null）
+        rowZ: (tz) => { const zz = tz + (o + PERIOD * Math.round((z0 + 80 - o - tz) / PERIOD)); return zz >= z0 && zz < z0 + 160 ? zz : null; },
+        // 在 kind 地块里撒树
+        trees: (kinds, n, pal, { r = [3.5, 6], xr = 420, flat, h, subs = 3, test } = {}) => {
+          for (let k = 0; k < n; k++) { const x = (R() * 2 - 1) * xr, z = z0 + R() * 160, kk = K(x, z);
+            if (!(Array.isArray(kinds) ? kinds.includes(kk) : kk === kinds)) continue;
+            if (test && !test(x, local(b, z))) continue;
+            tree(x, z, r[0] + R() * (r[1] - r[0]), [pick(pal), ...pal], { subs, h, flat }); }
+        },
+        // 格网街区：kind 地块里逐格放楼（hfn 决定高度，返回 0 则跳过）
+        blocks: (kind, step, { pad = step * 0.36, jitter = 0.25, skip = 0.08, hfn, pal, top, roof, roofPal, roofH = 3, hw: hwF } = {}) => {
+          const zs = Math.ceil(z0 / step) * step;
+          for (let z = zs; z < z0 + 160; z += step) for (let x = -XR; x <= XR; x += step) {
+            const xx = x + (R() - 0.5) * step * jitter, zz = z + (R() - 0.5) * step * jitter;
+            const hw = hwF ? hwF(R) : pad * (0.85 + R() * 0.3), hd = hwF ? hwF(R) : pad * (0.85 + R() * 0.3);
+            if (!allK(xx, zz, hw, hd, kind) || R() < skip) continue;
+            const h = hfn(xx, local(b, zz), R); if (!h) continue;
+            put('body', xx, 0, zz, hw * 2, h, hd * 2, pick(pal));
+            if (roof === 'hip') put('hip', xx, h, zz, hw * 2.3, roofH, hd * 2.3, pick(roofPal));
+            else if (roof === 'gable') put('gable', xx, h, zz, hw * 2.1, roofH, hd * 2.1, pick(roofPal), R() < 0.5 ? 0 : Math.PI / 2);
+            else if (roof === 'flat') put('top', xx, h, zz, hw * 2.08, 0.8, hd * 2.08, pick(roofPal));
+            else if (top) put('top', xx + (R() - 0.5) * hw * 0.6, h, zz + (R() - 0.5) * hd * 0.6, hw * (0.6 + R() * 0.5), 1 + R() * 2, hd * (0.5 + R() * 0.5), pick(top));
+          }
+        },
+      };
+      CITIES[b - 4].deco(D);
+    } else if (b === 0) {
       lattice(13, (x, z) => {
         const hw = 4 + R() * 2.2, hd = 4 + R() * 2.2;
         if (!allK(x, z, hw, hd, 0) || R() < 0.08) return;
@@ -225,6 +264,8 @@ const personGeo = mergeG([new THREE.CylinderGeometry(0.55, 0.65, 2.0, 6).transla
 const ferryGeo = mergeG([new THREE.BoxGeometry(5.4, 1.6, 15).translate(0, 0.8, 0), new THREE.BoxGeometry(4.4, 2.0, 9).translate(0, 2.6, 0), new THREE.BoxGeometry(3.2, 1.2, 4).translate(0, 4.2, -1.5)]);
 const ferryTopGeo = mergeG([new THREE.BoxGeometry(5.6, 0.7, 15.2).translate(0, 1.2, 0)]);
 const hullGeo = mergeG([new THREE.BoxGeometry(2.0, 0.9, 6.4).translate(0, 0.45, 0)]);
+const rowGeo = mergeG([new THREE.BoxGeometry(2.2, 0.9, 7).translate(0, 0.45, 0), new THREE.BoxGeometry(2.0, 1.4, 3).translate(0, 1.6, 0.4)]);
+const jetGeo = mergeG([new THREE.CylinderGeometry(0.25, 1.1, 1, 7).translate(0, 0.5, 0), new THREE.IcosahedronGeometry(1.1, 0).translate(0, 1, 0)]);
 const sailGeo = (() => { const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([0, 1, -1.4, 0, 9, -0.6, 0, 1, 2.4], 3)); g.computeVertexNormals(); return g; })();
 function mergeG(list) {
@@ -239,15 +280,16 @@ const WIN = 440;
 export class Life {
   constructor(scene) {
     const mk = (geo, n, shadow = true, mat = lowPoly()) => { const m = inst(geo, mat, n, shadow); scene.add(m); return m; };
-    this.m = { car: mk(carGeo, 90), bus: mk(busGeo, 16), person: mk(personGeo, 220, false), ferry: mk(ferryGeo, 6), ferryTop: mk(ferryTopGeo, 6, false), hull: mk(hullGeo, 12), sail: mk(sailGeo, 12, true, new THREE.MeshLambertMaterial({ side: THREE.DoubleSide })) };
+    this.m = { car: mk(carGeo, 90), bus: mk(busGeo, 16), person: mk(personGeo, 320, false), ferry: mk(ferryGeo, 10), ferryTop: mk(ferryTopGeo, 10, false), hull: mk(hullGeo, 12), sail: mk(sailGeo, 12, true, new THREE.MeshLambertMaterial({ side: THREE.DoubleSide })),
+      row: mk(rowGeo, 24), jet: mk(jetGeo, 120, false, new THREE.MeshLambertMaterial({ emissive: sc(0.5, 0.52, 0.55), transparent: true, opacity: 0.82 })) };
     this.t = 0;
   }
   // 最靠近镜头的那一份周期里，局部 z 对应的世界 z
   wz(lz, camZ) { const oz = ORIGIN[this.b][0]; return lz + oz + PERIOD * Math.round((camZ - oz - lz) / PERIOD); }
   reset(b, camZ, R) {
-    this.b = b; this.R = R; this.cars = []; this.people = []; this.boats = [];
+    this.b = b; this.R = R; this.cars = []; this.people = []; this.boats = []; this.custom = null; this.busC = null;
     const pick = (a) => a[Math.floor(R() * a.length)];
-    const taxi = TAXI[b === 2 ? 1 : b] || [];
+    const taxi = b >= 4 ? P(CITIES[b - 4].taxi || []) : TAXI[b === 2 ? 1 : b] || [];
     const carC = () => (R() < 0.22 && taxi.length ? pick(taxi) : pick(CARC));
     // 东西向车道：lz 车道中心局部 z，dir 行驶方向（+1 向东），n 车辆数
     const ew = (lz, dir, n, v, bus = 0) => { for (let i = 0; i < n; i++) this.cars.push({ ax: 'x', lz, dir, p: (R() * 2 - 1) * WIN, v: v * (0.85 + R() * 0.3), c: carC(), bus: R() < bus }); };
@@ -259,7 +301,22 @@ export class Life {
         this.people.push({ rect: [x0, z0, x1, z1], avoid, x, z, tx: x, tz: z, v: 0.9 + R() * 0.7, wait: R() * 4, c: pick(PEOPLE) });
       }
     };
-    if (b === 0) {
+    if (b >= 4) {
+      const city = CITIES[b - 4];
+      const D = { R, L, sc, P, pick, carC, ew, ns, crowd, camZ,
+        // 沿任意线段往返的车流：a→b（局部坐标），lane 为横向偏移，y 为高度（桥面）
+        seg: (a, bb, n, v, { lanes = [-2, 2], y = 0, bus = 0.1 } = {}) => { const len = Math.hypot(bb[0] - a[0], bb[1] - a[1]);
+          for (let i = 0; i < n; i++) { const ln = lanes[i % lanes.length]; this.cars.push({ ax: 's', a, b: bb, len, lane: ln, dir: ln > 0 ? 1 : -1, p: R() * len, v: v * (0.85 + R() * 0.3), c: carC(), bus: R() < bus, y }); } },
+        ferry: (rt, v = 10, c1 = [0.20, 0.42, 0.30], c2 = [0.96, 0.90, 0.70], s = 1) => this.boats.push({ kind: 'ferry', rt, seg: Math.floor(R() * rt.length), u: R(), v: v * (0.9 + R() * 0.2), heading: null, c1: sc(...c1), c2: sc(...c2), s }),
+        // 帆船 / 小船：在 ok(x, z) 为真的水面上漂游（区域 [x0,z0,x1,z1]）
+        sail: (n, box, ok, { kind = 'sail', v = [4, 7], cols } = {}) => { for (let k = 0; k < n; k++) { let x, z, t = 0;
+          do { x = box[0] + R() * (box[2] - box[0]); z = box[1] + R() * (box[3] - box[1]); t++; } while (!ok(x, z) && t < 60);
+          this.boats.push({ kind, x, z, h: R() * 6.28, v: v[0] + R() * (v[1] - v[0]), ok, box, c: cols ? sc(...pick(cols)) : R() < 0.8 ? sc(0.98, 0.98, 0.96) : pick(PEOPLE) }); } },
+        bus: (c) => { this.busC = sc(...c); },
+        custom: (fn) => { this.custom = fn; },
+      };
+      city.life(D);
+    } else if (b === 0) {
       for (const [lz, d] of [[-52, 1], [-48, -1], [170 - 2, 1], [172, -1]]) ew(lz, d, 3, 13);
       ns(-72, -1, 3, 12); ns(-68, 1, 3, 12); ns(227, -1, 3, 14); ns(233, 1, 3, 14);
       crowd(-34, -34, 34, -22, 8); crowd(-34, 18, 34, 30, 10); crowd(130, 50, 200, 70, 10);
@@ -267,8 +324,8 @@ export class Life {
       // 长安街：两向各五条车道，含公交
       for (const [off, d] of [[-15, -1], [-11, -1], [-7, -1], [-3.5, -1], [3.5, 1], [7, 1], [11, 1], [15, 1]]) ew(48 + off, d, b === 1 ? 3 : 2, 15, 0.18);
       ns(-400, -1, 3, 13); ns(-396, 1, 3, 13); ns(264, -1, 2, 12); ns(268, 1, 2, 12);
-      const sq = [[-18, 220, 18, 262], [-32, 336, 32, 400], [-4, 78, 4, 90]];
-      crowd(-118, 76, 118, 440, b === 1 ? 70 : 30, sq);
+      const sq = [[-18, 220, 18, 262], [-32, 336, 32, 400], [-4, 78, 4, 90], [-15, 135, 15, 165]];
+      crowd(-118, 76, 118, 440, b === 1 ? 130 : 30, sq);
       crowd(-60, 18, 60, 27, 12);
       crowd(-26, -270, 26, -145, 14);
       crowd(-90, -440, 90, -376, b === 2 ? 30 : 10, [[-50, -440, 50, -436]]);
@@ -306,7 +363,7 @@ export class Life {
     const b = this.b, R = Math.random, n = {}; for (const k in this.m) n[k] = 0;
     const put = (key, x, y, z, s, yaw, color, pitch = 0, roll = 0) => {
       const mesh = this.m[key]; if (n[key] >= mesh.instanceMatrix.count) return;
-      dummy.position.set(x, y, z); dummy.rotation.set(pitch, yaw, roll, 'YXZ'); dummy.scale.set(s, s, s); dummy.updateMatrix();
+      dummy.position.set(x, y, z); dummy.rotation.set(pitch, yaw, roll, 'YXZ'); if (Array.isArray(s)) dummy.scale.set(s[0], s[1], s[2]); else dummy.scale.set(s, s, s); dummy.updateMatrix();
       mesh.setMatrixAt(n[key], dummy.matrix); mesh.setColorAt(n[key], color); n[key]++;
     };
     const vis = (x, z) => Math.abs(z - camZ) < 440 && Math.abs(x - camX) < 520;
@@ -322,6 +379,11 @@ export class Life {
         x = c.x; z = c.p; yaw = c.dir > 0 ? Math.PI : 0;
         const k = kindOf(b, x, local(b, z));
         if (k !== 1) continue;
+      } else if (c.ax === 's') {
+        if (c.p > c.len) c.p -= c.len; else if (c.p < 0) c.p += c.len;
+        const ux = (c.b[0] - c.a[0]) / c.len, uz = (c.b[1] - c.a[1]) / c.len;
+        x = c.a[0] + ux * c.p - uz * c.lane; const lz = c.a[1] + uz * c.p + ux * c.lane; z = this.wz(lz, camZ); y = c.y;
+        yaw = Math.atan2(-ux * c.dir, -uz * c.dir);
       } else {
         if (c.p > 410) c.p = -150; else if (c.p < -150) c.p = 410;
         const al = c.p, deck = al < 0 ? Math.max(4, 25 + al * 0.12) : al > 252 ? Math.max(4, 25 - (al - 252) * 0.12) : 25;
@@ -330,7 +392,7 @@ export class Life {
         yaw = Math.atan2(-0.966 * c.dir, -0.259 * c.dir);
       }
       if (!vis(x, z)) continue;
-      put(c.bus ? 'bus' : 'car', x, y, z, 1, yaw, c.bus ? (b === 3 ? sc(0.30, 0.50, 0.75) : sc(0.86, 0.22, 0.18)) : c.c);
+      put(c.bus ? 'bus' : 'car', x, y, z, 1, yaw, c.bus ? (this.busC || (b === 3 ? sc(0.30, 0.50, 0.75) : sc(0.86, 0.22, 0.18))) : c.c);
     }
     for (const p of this.people) {
       if (p.wait > 0) p.wait -= dt;
@@ -358,20 +420,23 @@ export class Life {
         const want = Math.atan2(-(c[0] - a[0]), -(c[1] - a[1]));
         if (bt.heading === null) bt.heading = want;
         let dh = want - bt.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); bt.heading += THREE.MathUtils.clamp(dh, -1.2 * dt, 1.2 * dt);
-        const wx = SY_X - lz, z = this.wz(x, camZ); if (!vis(wx, z)) continue;
-        const rock = Math.sin(this.t * 1.3 + bt.seg) * 0.03, yaw = bt.heading - Math.PI / 2;
-        put('ferry', wx, 0, z, 1, yaw, sc(0.20, 0.42, 0.30), 0, rock);
-        put('ferryTop', wx, 1.6, z, 1, yaw, sc(0.96, 0.90, 0.70), 0, rock);
+        const rot = b === 3, wx = rot ? SY_X - lz : x, z = this.wz(rot ? x : lz, camZ); if (!vis(wx, z)) continue;
+        const rock = Math.sin(this.t * 1.3 + bt.seg) * 0.03, yaw = rot ? bt.heading - Math.PI / 2 : bt.heading, s = bt.s || 1;
+        put('ferry', wx, 0, z, s, yaw, bt.c1 || sc(0.20, 0.42, 0.30), 0, rock);
+        put('ferryTop', wx, 1.6 * s, z, s, yaw, bt.c2 || sc(0.96, 0.90, 0.70), 0, rock);
       } else {
         bt.h += (Math.sin(this.t * 0.2 + bt.v) * 0.25) * dt;
         const nx = bt.x - Math.sin(bt.h) * bt.v * dt, nz = bt.z - Math.cos(bt.h) * bt.v * dt;
-        if (L.syLand(nx, nz) > -12 || Math.abs(nx) > 520 || nz < -290 || nz > 40) bt.h += 2.2 * dt * 4; else { bt.x = nx; bt.z = nz; }
-        const wx = SY_X - bt.z, z = this.wz(bt.x, camZ); if (!vis(wx, z)) continue;
-        const heel = 0.18 + Math.sin(this.t * 0.9 + bt.v) * 0.05, yaw = bt.h - Math.PI / 2;
+        const bad = bt.ok ? (!bt.ok(nx, nz) || nx < bt.box[0] || nx > bt.box[2] || nz < bt.box[1] || nz > bt.box[3]) : (L.syLand(nx, nz) > -12 || Math.abs(nx) > 520 || nz < -290 || nz > 40);
+        if (bad) bt.h += 2.2 * dt * 4; else { bt.x = nx; bt.z = nz; }
+        const rot = b === 3, wx = rot ? SY_X - bt.z : bt.x, z = this.wz(rot ? bt.x : bt.z, camZ); if (!vis(wx, z)) continue;
+        const heel = 0.18 + Math.sin(this.t * 0.9 + bt.v) * 0.05, yaw = rot ? bt.h - Math.PI / 2 : bt.h;
+        if (bt.kind === 'row') { put('row', wx, 0, z, 1, yaw, bt.c, 0, Math.sin(this.t * 1.7 + bt.v) * 0.04); continue; }
         put('hull', wx, 0, z, 1, yaw, sc(0.96, 0.96, 0.95), 0, heel * 0.4);
         put('sail', wx, 0, z, 1, yaw, bt.c, 0, heel);
       }
     }
+    if (this.custom) this.custom(this.t, put, (lz) => this.wz(lz, camZ), vis);
     for (const k in this.m) { const mesh = this.m[k]; mesh.count = n[k]; mesh.visible = n[k] > 0; mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
   }
 }

@@ -1,9 +1,11 @@
 // 地标世界（?world=landmarks）的平面布局：同一段类 C 源码同时编译成 GLSL（地面着色/地形位移）和 JS（摆放建筑、车辆、行人）。
 // 坐标：x 向东，z 向南（飞机向 -z 即向北飞），1 单位 ≈ 2 米（0.5 单位/米）。每个场景的地标以“局部坐标”描述，
 // 局部 z = 世界 z - 地标原点；地标每 PERIOD 单位重复一次，局部 z 落在 [LO, LO+PERIOD) 内。
+import { CITIES } from './lm/cities.js';
 export const PERIOD = 2200;
 // 场景 → [原点 OZ（镜头 z=0 时地标原点的世界 z）, 局部窗口下界 LO]
-export const ORIGIN = [[-40, -1300], [-120, -1370], [400, -1370], [-10, -1300]];
+// 5…14 号场景（各城市模块）的原点写在各自文件里
+export const ORIGIN = [[-40, -1300], [-120, -1370], [400, -1370], [-10, -1300], ...CITIES.map((c) => c.origin)];
 // 悉尼的布局按真实方位写（x 东、z 南），画面里旋转 90°：飞机向西飞，画面上方 = 西、右方 = 北，
 // 这样镜头从东面（麦考瑞夫人角方向）望过去，歌剧院在前、海港大桥的拱在后——最经典的角度。
 // 布局坐标 (x', z') 与世界 (x, 局部 z) 的关系：x' = 局部 z，z' = SY_X - x
@@ -121,8 +123,9 @@ float syKind(float x, float z){
   return 7.;
 }
 
-/* 地形高度：景山、琼华岛（白塔山），其余平地 */
-float lmHeight(float b, float x, float z){
+${CITIES.map((c) => c.layout).join('\n')}
+/* 地形高度：北京的景山、琼华岛（白塔山）；各城市模块可提供自己的高度函数（局部坐标） */
+float lmHeightBJ(float b, float x, float z){
   if (b < .5 || b > 2.5) return 0.;
   float oz = ${f(ORIGIN[1][0])};
   if (b > 1.5) oz = ${f(ORIGIN[2][0])};
@@ -138,11 +141,17 @@ float lmHeight(float b, float x, float z){
   if (r2 < 1.) { float e2 = 1. - r2; h = max(h, smoothstep(0., 1., e2)*16.); }
   return h;
 }
+float lmHeight(float b, float x, float z){
+  if (b < 3.5) return lmHeightBJ(b, x, z);
+${CITIES.map((c, i) => c.height ? `  if (abs(b - ${i + 4}.) < .5) return ${c.height}(x, lmLocal(z, ${f(c.origin[0])}, ${f(c.origin[1])}));` : '').filter(Boolean).join('\n')}
+  return 0.;
+}
 `;
 
 // ---- 编译成 JS
 const LIB = {
   sin: Math.sin, cos: Math.cos, abs: Math.abs, sqrt: Math.sqrt, floor: Math.floor, min: Math.min, max: Math.max, pow: Math.pow, exp: Math.exp,
+  atan: (y, x) => (x === undefined ? Math.atan(y) : Math.atan2(y, x)), sign: Math.sign, length: (a, b) => Math.hypot(a, b),
   mod: (a, b) => a - b * Math.floor(a / b), fract: (a) => a - Math.floor(a), mix: (a, b, t) => a + (b - a) * t,
   clamp: (x, a, b) => Math.min(b, Math.max(a, x)), step: (e, x) => (x < e ? 0 : 1),
   smoothstep: (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); },
@@ -150,11 +159,11 @@ const LIB = {
 const toJS = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/const float /g, 'const ')
   .replace(/float\s+(\w+)\s*\(([^)]*)\)\s*\{/g, (m, n, a) => `function ${n}(${a.replace(/float\s+/g, '')}){`)
   .replace(/\bfloat\s+/g, 'let ');
-const NAMES = ['rectD', 'ellD', 'gridD', 'lmLocal', 'tkMain', 'tkKind', 'bjMoat', 'bjKind', 'syLand', 'syBridge', 'syKind', 'lmHeight'];
+const NAMES = ['rectD', 'ellD', 'gridD', 'lmLocal', 'tkMain', 'tkKind', 'bjMoat', 'bjKind', 'syLand', 'syBridge', 'syKind', 'lmHeight', ...CITIES.flatMap((c) => c.names)];
 export const L = new Function(...Object.keys(LIB), toJS(SHARED) + `\nreturn {${NAMES.join(',')}};`)(...Object.values(LIB));
 
 // 场景 b：世界 z → 局部 z / 原点
 export const local = (b, z) => L.lmLocal(z, ORIGIN[b][0], ORIGIN[b][1]);
 export const originOf = (b, z) => z - local(b, z);
 // 场景 b 的地面类型
-export const kindOf = (b, x, lz) => (b === 0 ? L.tkKind(x, lz) : b === 3 ? L.syKind(lz, SY_X - x) : L.bjKind(x, lz));
+export const kindOf = (b, x, lz) => (b === 0 ? L.tkKind(x, lz) : b === 3 ? L.syKind(lz, SY_X - x) : b >= 4 ? L[CITIES[b - 4].kind](x, lz) : L.bjKind(x, lz));

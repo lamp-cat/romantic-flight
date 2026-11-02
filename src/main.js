@@ -168,8 +168,8 @@ class Chunk {
   constructor() {
     this.group = new THREE.Group();
     this.ground = new THREE.Mesh(groundGeo, groundMat); this.ground.receiveShadow = true;
-    this.blobs = makeInst(blobGeo, blobMat, 900);
-    this.trunk = makeInst(trunkGeo, trunkMat, 200);
+    this.blobs = makeInst(blobGeo, blobMat, 1800);
+    this.trunk = makeInst(trunkGeo, trunkMat, 400);
     this.petals = makeInst(petalGeo, petalMat, 2600, false);
     this.cattle = makeInst(cattleGeo, cattleMat, 220);
     this.zebra = makeInst(zebraGeo, zebraMat, 360);
@@ -656,7 +656,7 @@ canvas.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') set
 
 // ---------------------------------------------------------------- 启动
 layout();
-const startScene = params.has('scene') ? (parseInt(params.get('scene'), 10) - 1) % 4 : 0;
+const startScene = params.has('scene') ? (parseInt(params.get('scene'), 10) - 1) % SCENES.length : 0;
 applyScene(startScene);
 if (CAPTURE) {
   window.__step = (dt = 1 / 30, n = 1) => { for (let i = 0; i < n; i++) update(dt); render(); return state.camZ; };

@@ -1,5 +1,6 @@
 // 地标世界的地面着色（GLSL）：街道、广场铺装、护城河/海港水面、公园。依赖 groundCommonGLSL 与 landmarks_layout.SHARED。
 import { ORIGIN } from './landmarks_layout.js';
+import { CITIES } from './lm/cities.js';
 const O = (b) => `${ORIGIN[b][0].toFixed(1)}, ${ORIGIN[b][1].toFixed(1)}`;
 export const lmGroundGLSL = /* glsl */ `
 varying float vSlope;
@@ -182,13 +183,17 @@ vec3 sydney(vec2 q){
   return col;
 }
 
+// ------------------------------------------------ 5…14：各城市模块的地面（参数：世界坐标 p、局部 x/z）
+${CITIES.map((c) => c.ground).join('\n')}
+
 vec3 groundColor(vec2 p){
   gEm = vec3(0.);
   vec3 c;
   if (uBiome < .5) c = tokyo(p);
   else if (uBiome < 1.5) c = beijing(p, ${ORIGIN[1][0].toFixed(1)});
   else if (uBiome < 2.5) c = beijing(p, ${ORIGIN[2][0].toFixed(1)});
-  else c = sydney(p);
+  else if (uBiome < 3.5) c = sydney(p);
+${CITIES.map((c, i) => `  else if (uBiome < ${i + 4}.5) c = ${c.groundFn}(p, p.x, lmLocal(p.y, ${O(i + 4)}));`).join('\n')}
   return c * clamp(1. + 1.4*vSlope, .6, 1.4);
 }
 `;
