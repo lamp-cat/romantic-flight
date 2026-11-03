@@ -17,6 +17,10 @@
 3. **Serengeti, Tanzania** — Dry season · long grass（金色稀树草原、土路、河、斑马群、绿树、水塘）
 4. **Punjab, India** — Late winter · mustard in flower（黄色油菜花/绿色田块拼布、公路、河、树丛、带围栏的小房子、车）
 
+<p>
+<img src="shots/scene1.png" width="24%"> <img src="shots/scene2.png" width="24%"> <img src="shots/scene3.png" width="24%"> <img src="shots/scene4.png" width="24%">
+</p>
+
 ## 运行
 ```bash
 npm install
@@ -121,6 +125,10 @@ npm run middleearth   # 开发模式并直接打开 http://localhost:5173/?world
    谷底草地上的白色精灵建筑和金色秋树，小径上的远征队和一位白衣骑手，偶尔有巨鹰盘旋。
 4. **魔多（Gorgoroth 高原）**：灰黑火山灰平原和发光裂缝，两条流动的熔岩河，
    带放射状熔岩沟的火山口和烟柱，黑塔剪影（顶部有一点橙光），道路上行进的兽人纵队（红色旗帜、长矛）。
+
+<p>
+<img src="shots/me_scene1.png" width="24%"> <img src="shots/me_scene2.png" width="24%"> <img src="shots/me_scene3.png" width="24%"> <img src="shots/me_scene4.png" width="24%">
+</p>
 
 HUD 显示地区名、中土历法/季节文字（如 "Halimath · harvest-tide, Shire Reckoning 1418"）
 和虚构的地图坐标（`lg E · lg N`，随飞行实时变化）。

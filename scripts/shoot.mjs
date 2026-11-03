@@ -185,7 +185,7 @@ try {
     fs.rmSync(fdir, { recursive: true, force: true });
     console.log('lm tour done');
   } else if (mode === 'frames') {
-    // 对照视频用：逐帧 JPEG（30 fps），由 scripts/compare.sh 与原视频拼接
+    // 导出逐帧 JPEG（30 fps），可自行用 ffmpeg 合成视频
     const scene = process.argv[4] || '1', N = +(process.argv[5] || 450);
     const fdir = `${out}/frames${scene}`; fs.rmSync(fdir, { recursive: true, force: true }); fs.mkdirSync(fdir, { recursive: true });
     await page.goto(`${url}?capture&scene=${scene}`);
