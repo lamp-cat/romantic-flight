@@ -19,7 +19,7 @@ const EARTH_SCENES = [
 ];
 const ART = { cx: 360, cy: 310, hx: 296, hy: 222 };       // 画面矩形（720 设计单位舞台）
 const RECT = { x: 40, y: 64, w: 640, h: 492 };            // 画布覆盖的设计区域
-const BASE_SPEED = 27;                                      // 设计单位/秒（从参考视频测得）
+const BASE_SPEED = 27;                                      // 设计单位/秒
 const DEG_PER_UNIT = 0.0003;
 const CHUNK = 160;
 const AUTO_SECONDS = 20;
